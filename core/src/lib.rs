@@ -56,6 +56,7 @@
 
 pub mod datatypes;
 pub mod emcy;
+pub mod lss;
 pub mod nmt;
 pub mod node;
 pub mod object_dictionary;
@@ -67,6 +68,7 @@ pub mod types;
 
 pub use datatypes::{DataType, Value};
 pub use emcy::{EmergencyMessage, ErrorRegister};
+pub use lss::{LssAddress, LssSlave, LssState};
 pub use nmt::{NmtCommand, NmtState, NmtStateMachine};
 pub use node::{Node, TxFrame};
 pub use object_dictionary::{AccessType, Address, Entry, ObjectDictionary};

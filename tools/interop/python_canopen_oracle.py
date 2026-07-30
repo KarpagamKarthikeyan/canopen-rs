@@ -187,6 +187,31 @@ check("PDO mapping value 0x6000/1 x8 bits", pdo_mapping_value(0x6000, 1, 8),
       [0x60, 0x00, 0x01, 0x08])
 
 
+# ---- LSS: build frames using python-canopen's own command specifiers ----
+from canopen import lss as pylss  # noqa: E402
+
+
+def lss_byte(cs, value=0):
+    return bytes([cs, value, 0, 0, 0, 0, 0, 0])
+
+
+def lss_u32(cs, number):
+    return bytes([cs]) + struct.pack("<I", number) + b"\x00\x00\x00"
+
+
+check("LSS switch global (configuration)",
+      lss_byte(pylss.CS_SWITCH_STATE_GLOBAL, 1), [0x04, 0x01, 0, 0, 0, 0, 0, 0])
+check("LSS configure node-id 0x20",
+      lss_byte(pylss.CS_CONFIGURE_NODE_ID, 0x20), [0x11, 0x20, 0, 0, 0, 0, 0, 0])
+check("LSS switch selective vendor-id 0x1F",
+      lss_u32(pylss.CS_SWITCH_STATE_SELECTIVE_VENDOR_ID, 0x1F),
+      [0x40, 0x1F, 0x00, 0x00, 0x00, 0, 0, 0])
+check("LSS store configuration",
+      lss_byte(pylss.CS_STORE_CONFIGURATION), [0x17, 0, 0, 0, 0, 0, 0, 0])
+check("LSS inquire node-id",
+      lss_byte(pylss.CS_INQUIRE_NODE_ID), [0x5E, 0, 0, 0, 0, 0, 0, 0])
+
+
 print()
 passed = sum(results)
 total = len(results)

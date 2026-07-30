@@ -32,9 +32,12 @@ top.
 | NMT state machine, node-control, heartbeat / boot-up | ✅ |
 | PDO mapping, TPDO pack / RPDO unpack, connection-set COB-IDs | ✅ |
 | SYNC (producer counter) and EMCY (emergency + error register) | ✅ |
+| `Node` runtime (OD + SDO + NMT + PDO exchange) | ✅ |
+| LSS slave (node-id / bit-timing configuration) | ✅ |
 | `embedded-can` bridge + Linux SocketCAN transport | ✅ |
 | EDS / DCF file parsing → object dictionary | ✅ |
-| SDO block transfer, LSS, heartbeat-consumer timeout | planned |
+| Host NMT master: `send_nmt` + heartbeat monitor | ✅ |
+| SDO block transfer, string / `DOMAIN` value types | planned |
 
 Everything in the core is `#![no_std]`, `#![deny(unsafe_code)]`, and builds for
 `thumbv7em-none-eabihf`; SDO frame codecs are validated against known-good byte
