@@ -38,6 +38,8 @@ pub enum Error {
     MappingFull,
     /// A SYNC counter overflow value outside `0` or `2..=240`.
     InvalidSyncCounter,
+    /// An SDO segment's toggle bit did not alternate as required.
+    ToggleMismatch,
 }
 
 impl fmt::Display for Error {
@@ -57,6 +59,7 @@ impl fmt::Display for Error {
             Error::PdoTooLong => "mapped PDO objects exceed eight bytes",
             Error::MappingFull => "PDO mapping capacity exhausted",
             Error::InvalidSyncCounter => "SYNC counter overflow must be 0 or 2..=240",
+            Error::ToggleMismatch => "SDO segment toggle bit did not alternate",
         };
         f.write_str(msg)
     }

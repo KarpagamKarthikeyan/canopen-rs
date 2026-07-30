@@ -14,6 +14,8 @@
 //! moving the frame is the transport's responsibility, keeping this codec
 //! transport-agnostic.
 
+use heapless::Vec;
+
 use crate::datatypes::{DataType, Value};
 use crate::object_dictionary::Address;
 use crate::types::NodeId;
@@ -38,14 +40,29 @@ pub const fn response_cob_id(node: NodeId) -> u16 {
 }
 
 // --- Command specifiers (top three bits of byte 0) -------------------------
+const CCS_DOWNLOAD_SEGMENT: u8 = 0x00; // client: 000xxxxx
 const CCS_DOWNLOAD_INITIATE: u8 = 0x20; // client: 001xxxxx
 const CCS_UPLOAD_INITIATE: u8 = 0x40; // client: 010xxxxx
+const CCS_UPLOAD_SEGMENT: u8 = 0x60; // client: 011xxxxx
+// The server's upload-segment specifier (scs 000) equals CCS_DOWNLOAD_SEGMENT,
+// which is why one data-segment codec serves both directions.
+const SCS_DOWNLOAD_SEGMENT: u8 = 0x20; // server: 001xxxxx
 const SCS_UPLOAD_INITIATE: u8 = 0x40; // server: 010xxxxx
 const SCS_DOWNLOAD_INITIATE: u8 = 0x60; // server: 011xxxxx
 const CS_ABORT: u8 = 0x80; // either:  100xxxxx
 
-// Expedited + size-indicated flags (low two bits of byte 0).
-const EXPEDITED_SIZED: u8 = 0x03;
+// Top-three-bit command-specifier mask.
+const CS_MASK: u8 = 0xE0;
+
+// Low-byte flag bits.
+const EXPEDITED: u8 = 0x02; // 'e' in an initiate frame
+const SIZE_INDICATED: u8 = 0x01; // 's' in an initiate frame
+const EXPEDITED_SIZED: u8 = EXPEDITED | SIZE_INDICATED; // expedited + size (0x03)
+const TOGGLE: u8 = 0x10; // 't' in a segment frame
+const NO_MORE_SEGMENTS: u8 = 0x01; // 'c' in a data-segment frame (last segment)
+
+/// Maximum data bytes carried by a single SDO segment frame.
+pub const SEGMENT_DATA_MAX: usize = 7;
 
 /// SDO abort codes (CiA 301 §7.2.4.3.17). The value is the 32-bit code sent
 /// little-endian in bytes 4..8 of an abort frame.
@@ -184,6 +201,249 @@ pub fn decode_abort(p: &SdoPayload) -> Result<(Address, u32)> {
     Ok((addr, code))
 }
 
+// === Segmented transfer ====================================================
+//
+// For values larger than four bytes, transfer proceeds in two phases: an
+// *initiate* exchange declaring the total byte count, then a run of *segment*
+// exchanges each carrying up to seven data bytes. A per-transfer *toggle* bit
+// alternates on every segment (starting at 0) to detect lost or duplicated
+// frames, and the final data segment sets the "no more segments" bit.
+//
+// The initiate *download response* (server) and initiate *upload request*
+// (client) are byte-identical to the expedited case, so reuse
+// [`encode_download_response`] / [`decode_download_response`] and
+// [`encode_upload_request`] for them.
+
+/// A decoded SDO data segment: its toggle bit, whether it is the last segment,
+/// and the (borrowed) data bytes it carries.
+///
+/// The download-segment request (client → server) and the upload-segment
+/// response (server → client) share this exact frame layout, so one type and
+/// one codec serve both directions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Segment<'a> {
+    /// The toggle bit for this segment (alternates each segment from `false`).
+    pub toggle: bool,
+    /// Whether this is the final segment of the transfer.
+    pub last: bool,
+    /// The segment's payload (1..=7 bytes).
+    pub data: &'a [u8],
+}
+
+/// Encode a client **segmented download initiate** request declaring a
+/// `size`-byte transfer to `addr` (command `0x21`).
+pub fn encode_download_initiate_segmented(addr: Address, size: u32) -> SdoPayload {
+    let mut p = [0u8; 8];
+    p[0] = CCS_DOWNLOAD_INITIATE | SIZE_INDICATED;
+    p[1..3].copy_from_slice(&addr.index.to_le_bytes());
+    p[3] = addr.subindex;
+    p[4..8].copy_from_slice(&size.to_le_bytes());
+    p
+}
+
+/// Decode a download initiate request into `(address, size)`, requiring a
+/// segmented (non-expedited), size-indicated request.
+pub fn decode_download_initiate_segmented(p: &SdoPayload) -> Result<(Address, u32)> {
+    if p[0] & CS_MASK != CCS_DOWNLOAD_INITIATE
+        || p[0] & EXPEDITED != 0
+        || p[0] & SIZE_INDICATED == 0
+    {
+        return Err(Error::UnexpectedCommand);
+    }
+    let addr = Address::new(u16::from_le_bytes([p[1], p[2]]), p[3]);
+    Ok((addr, u32::from_le_bytes([p[4], p[5], p[6], p[7]])))
+}
+
+/// Encode the server's **segmented upload initiate response** declaring a
+/// `size`-byte transfer for `addr` (command `0x41`).
+pub fn encode_upload_initiate_segmented_response(addr: Address, size: u32) -> SdoPayload {
+    let mut p = [0u8; 8];
+    p[0] = SCS_UPLOAD_INITIATE | SIZE_INDICATED;
+    p[1..3].copy_from_slice(&addr.index.to_le_bytes());
+    p[3] = addr.subindex;
+    p[4..8].copy_from_slice(&size.to_le_bytes());
+    p
+}
+
+/// Decode a segmented upload initiate response into `(address, size)`.
+///
+/// Returns [`Error::UnexpectedCommand`] if the frame is not an upload initiate
+/// response, or if it is expedited (use [`decode_upload_expedited_response`]
+/// for that case).
+pub fn decode_upload_initiate_segmented_response(p: &SdoPayload) -> Result<(Address, u32)> {
+    if p[0] & CS_MASK != SCS_UPLOAD_INITIATE
+        || p[0] & EXPEDITED != 0
+        || p[0] & SIZE_INDICATED == 0
+    {
+        return Err(Error::UnexpectedCommand);
+    }
+    let addr = Address::new(u16::from_le_bytes([p[1], p[2]]), p[3]);
+    Ok((addr, u32::from_le_bytes([p[4], p[5], p[6], p[7]])))
+}
+
+/// Encode a **data segment** carrying 1..=7 bytes of `data`.
+///
+/// Used for both the download-segment request and the upload-segment response
+/// (identical layout). `toggle` alternates each segment (the first is
+/// `false`); `last` marks the final segment. Returns [`Error::BadLength`]
+/// unless `data` is 1..=7 bytes.
+pub fn encode_data_segment(data: &[u8], toggle: bool, last: bool) -> Result<SdoPayload> {
+    if data.is_empty() || data.len() > SEGMENT_DATA_MAX {
+        return Err(Error::BadLength);
+    }
+    let mut p = [0u8; 8];
+    // ccs/scs for a data segment are both 000, so byte 0's top bits stay 0.
+    let n = (SEGMENT_DATA_MAX - data.len()) as u8;
+    p[0] = (n << 1) & 0x0E;
+    if toggle {
+        p[0] |= TOGGLE;
+    }
+    if last {
+        p[0] |= NO_MORE_SEGMENTS;
+    }
+    p[1..1 + data.len()].copy_from_slice(data);
+    Ok(p)
+}
+
+/// Decode a **data segment** frame (download request or upload response).
+pub fn decode_data_segment(p: &SdoPayload) -> Result<Segment<'_>> {
+    if p[0] & CS_MASK != CCS_DOWNLOAD_SEGMENT {
+        return Err(Error::UnexpectedCommand);
+    }
+    let n = ((p[0] >> 1) & 0x07) as usize;
+    if n > SEGMENT_DATA_MAX {
+        return Err(Error::BadLength);
+    }
+    Ok(Segment {
+        toggle: p[0] & TOGGLE != 0,
+        last: p[0] & NO_MORE_SEGMENTS != 0,
+        data: &p[1..1 + (SEGMENT_DATA_MAX - n)],
+    })
+}
+
+/// Encode the server's **download segment response** (acknowledgement) with the
+/// segment's `toggle` bit (command `0x20 | toggle`).
+pub fn encode_download_segment_response(toggle: bool) -> SdoPayload {
+    let mut p = [0u8; 8];
+    p[0] = SCS_DOWNLOAD_SEGMENT | if toggle { TOGGLE } else { 0 };
+    p
+}
+
+/// Decode a download segment response, returning its toggle bit.
+pub fn decode_download_segment_response(p: &SdoPayload) -> Result<bool> {
+    if p[0] & CS_MASK != SCS_DOWNLOAD_SEGMENT {
+        return Err(Error::UnexpectedCommand);
+    }
+    Ok(p[0] & TOGGLE != 0)
+}
+
+/// Encode the client's **upload segment request** (poll for the next segment)
+/// with the expected `toggle` bit (command `0x60 | toggle`).
+pub fn encode_upload_segment_request(toggle: bool) -> SdoPayload {
+    let mut p = [0u8; 8];
+    p[0] = CCS_UPLOAD_SEGMENT | if toggle { TOGGLE } else { 0 };
+    p
+}
+
+/// Decode an upload segment request, returning its toggle bit.
+pub fn decode_upload_segment_request(p: &SdoPayload) -> Result<bool> {
+    if p[0] & CS_MASK != CCS_UPLOAD_SEGMENT {
+        return Err(Error::UnexpectedCommand);
+    }
+    Ok(p[0] & TOGGLE != 0)
+}
+
+/// Splits a byte buffer into SDO download data segments, tracking the toggle
+/// bit. Drive it after a successful download-initiate handshake: emit each
+/// frame, await its acknowledgement, then take the next.
+#[derive(Debug)]
+pub struct SegmentWriter<'a> {
+    data: &'a [u8],
+    pos: usize,
+    toggle: bool,
+}
+
+impl<'a> SegmentWriter<'a> {
+    /// Start splitting `data` (which should be the >4-byte value already
+    /// declared in the initiate request).
+    pub const fn new(data: &'a [u8]) -> Self {
+        Self { data, pos: 0, toggle: false }
+    }
+
+    /// Whether every byte has been emitted.
+    pub const fn is_done(&self) -> bool {
+        self.pos >= self.data.len()
+    }
+
+    /// Produce the next download data-segment frame, or `None` when finished.
+    pub fn next_segment(&mut self) -> Option<SdoPayload> {
+        if self.is_done() {
+            return None;
+        }
+        let remaining = self.data.len() - self.pos;
+        let len = remaining.min(SEGMENT_DATA_MAX);
+        let last = remaining <= SEGMENT_DATA_MAX;
+        let frame = encode_data_segment(&self.data[self.pos..self.pos + len], self.toggle, last)
+            .expect("len is 1..=7");
+        self.pos += len;
+        self.toggle = !self.toggle;
+        Some(frame)
+    }
+}
+
+/// Reassembles SDO upload data segments into a bounded buffer of capacity `N`,
+/// tracking and validating the toggle bit. Push each decoded [`Segment`] until
+/// [`SegmentReader::is_done`], then read [`SegmentReader::data`].
+#[derive(Debug)]
+pub struct SegmentReader<const N: usize> {
+    buf: Vec<u8, N>,
+    toggle: bool,
+    done: bool,
+}
+
+impl<const N: usize> Default for SegmentReader<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<const N: usize> SegmentReader<N> {
+    /// A new, empty reassembler.
+    pub const fn new() -> Self {
+        Self { buf: Vec::new(), toggle: false, done: false }
+    }
+
+    /// Whether the final segment has been received.
+    pub const fn is_done(&self) -> bool {
+        self.done
+    }
+
+    /// The reassembled bytes so far.
+    pub fn data(&self) -> &[u8] {
+        &self.buf
+    }
+
+    /// Append a decoded segment.
+    ///
+    /// Returns [`Error::ToggleMismatch`] if the segment's toggle bit is out of
+    /// sequence, [`Error::UnexpectedCommand`] if the transfer is already
+    /// complete, or [`Error::Overflow`] if the data exceeds capacity `N`.
+    pub fn push(&mut self, segment: &Segment) -> Result<()> {
+        if self.done {
+            return Err(Error::UnexpectedCommand);
+        }
+        if segment.toggle != self.toggle {
+            return Err(Error::ToggleMismatch);
+        }
+        self.buf.extend_from_slice(segment.data).map_err(|_| Error::Overflow)?;
+        self.toggle = !self.toggle;
+        if segment.last {
+            self.done = true;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,5 +557,112 @@ mod tests {
         let (addr, code) = decode_abort(&f).unwrap();
         assert_eq!(addr, Address::new(0x1000, 0));
         assert_eq!(code, 0x0602_0000);
+    }
+
+    // --- Segmented transfer ------------------------------------------------
+    // Known-good frame: segmented download initiate of a 20-byte value to
+    // 0x2000 sub 0. Command 0x21 = download initiate, size indicated, not
+    // expedited; size 20 little-endian in bytes 4..8.
+    #[test]
+    fn download_initiate_segmented_matches_known_frame() {
+        let f = encode_download_initiate_segmented(Address::new(0x2000, 0), 20);
+        assert_eq!(f, [0x21, 0x00, 0x20, 0x00, 20, 0x00, 0x00, 0x00]);
+        assert_eq!(decode_download_initiate_segmented(&f).unwrap(), (Address::new(0x2000, 0), 20));
+    }
+
+    // Known-good frame: segmented upload initiate response, 20-byte value from
+    // 0x2000 sub 0. Command 0x41 = upload initiate, size indicated, segmented.
+    #[test]
+    fn upload_initiate_segmented_response_matches_known_frame() {
+        let f = encode_upload_initiate_segmented_response(Address::new(0x2000, 0), 20);
+        assert_eq!(f, [0x41, 0x00, 0x20, 0x00, 20, 0x00, 0x00, 0x00]);
+        assert_eq!(
+            decode_upload_initiate_segmented_response(&f).unwrap(),
+            (Address::new(0x2000, 0), 20)
+        );
+    }
+
+    // A segmented initiate must not decode an expedited response and vice versa.
+    #[test]
+    fn segmented_initiate_rejects_expedited_frame() {
+        let expedited = [0x43, 0x00, 0x10, 0x00, 0x92, 0x01, 0x00, 0x00];
+        assert_eq!(
+            decode_upload_initiate_segmented_response(&expedited),
+            Err(Error::UnexpectedCommand)
+        );
+    }
+
+    // Known-good frame: a full 7-byte first data segment, toggle 0, not last.
+    // Command 0x00: n = 0 unused bytes, toggle clear, continue.
+    #[test]
+    fn data_segment_full_matches_known_frame() {
+        let f = encode_data_segment(&[1, 2, 3, 4, 5, 6, 7], false, false).unwrap();
+        assert_eq!(f, [0x00, 1, 2, 3, 4, 5, 6, 7]);
+    }
+
+    // Known-good frame: a final 3-byte segment, toggle 1, last. Command 0x19 =
+    // toggle (0x10) | n=4 unused bytes (4 << 1 = 0x08) | last (0x01).
+    #[test]
+    fn data_segment_last_matches_known_frame() {
+        let f = encode_data_segment(&[0xAA, 0xBB, 0xCC], true, true).unwrap();
+        assert_eq!(f, [0x19, 0xAA, 0xBB, 0xCC, 0x00, 0x00, 0x00, 0x00]);
+        let seg = decode_data_segment(&f).unwrap();
+        assert!(seg.toggle);
+        assert!(seg.last);
+        assert_eq!(seg.data, &[0xAA, 0xBB, 0xCC]);
+    }
+
+    #[test]
+    fn segment_ack_and_poll_toggle_roundtrip() {
+        assert_eq!(encode_download_segment_response(false), [0x20, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encode_download_segment_response(true), [0x30, 0, 0, 0, 0, 0, 0, 0]);
+        assert!(decode_download_segment_response(&encode_download_segment_response(true)).unwrap());
+
+        assert_eq!(encode_upload_segment_request(false), [0x60, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(encode_upload_segment_request(true), [0x70, 0, 0, 0, 0, 0, 0, 0]);
+        assert!(decode_upload_segment_request(&encode_upload_segment_request(true)).unwrap());
+    }
+
+    // End-to-end: split a 12-byte value into segments and reassemble it. The
+    // writer emits two frames (7 + 5), toggles alternating false/true, the
+    // second marked last; the reader validates the toggle and rebuilds it.
+    #[test]
+    fn segment_writer_reader_roundtrip() {
+        let payload: [u8; 12] = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120];
+        let mut writer = SegmentWriter::new(&payload);
+        let mut reader = SegmentReader::<64>::new();
+
+        let f1 = writer.next_segment().unwrap();
+        assert_eq!(f1[0] & TOGGLE, 0); // first toggle is 0
+        reader.push(&decode_data_segment(&f1).unwrap()).unwrap();
+        assert!(!reader.is_done());
+
+        let f2 = writer.next_segment().unwrap();
+        assert_ne!(f2[0] & TOGGLE, 0); // second toggle is 1
+        reader.push(&decode_data_segment(&f2).unwrap()).unwrap();
+
+        assert!(reader.is_done());
+        assert!(writer.next_segment().is_none());
+        assert_eq!(reader.data(), &payload);
+    }
+
+    #[test]
+    fn reader_rejects_toggle_out_of_sequence() {
+        let mut reader = SegmentReader::<16>::new();
+        // Second push should expect toggle=true; supplying false must fail.
+        reader.push(&Segment { toggle: false, last: false, data: &[1, 2, 3] }).unwrap();
+        assert_eq!(
+            reader.push(&Segment { toggle: false, last: true, data: &[4, 5] }),
+            Err(Error::ToggleMismatch)
+        );
+    }
+
+    #[test]
+    fn reader_overflow_is_reported() {
+        let mut reader = SegmentReader::<4>::new();
+        assert_eq!(
+            reader.push(&Segment { toggle: false, last: false, data: &[1, 2, 3, 4, 5] }),
+            Err(Error::Overflow)
+        );
     }
 }

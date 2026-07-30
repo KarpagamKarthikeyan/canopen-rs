@@ -37,5 +37,6 @@ pub use emcy::{EmergencyMessage, ErrorRegister};
 pub use nmt::{NmtCommand, NmtState, NmtStateMachine};
 pub use object_dictionary::{AccessType, Address, Entry, ObjectDictionary};
 pub use pdo::{MappingEntry, PdoKind, PdoMapping, TransmissionType};
+pub use sdo::{Segment, SegmentReader, SegmentWriter};
 pub use sync::SyncCounter;
 pub use types::{Error, NodeId, Result};
