@@ -24,14 +24,18 @@
 // #![warn(missing_docs)]
 
 pub mod datatypes;
+pub mod emcy;
 pub mod nmt;
 pub mod object_dictionary;
 pub mod pdo;
 pub mod sdo;
+pub mod sync;
 pub mod types;
 
 pub use datatypes::{DataType, Value};
+pub use emcy::{EmergencyMessage, ErrorRegister};
 pub use nmt::{NmtCommand, NmtState, NmtStateMachine};
 pub use object_dictionary::{AccessType, Address, Entry, ObjectDictionary};
 pub use pdo::{MappingEntry, PdoKind, PdoMapping, TransmissionType};
+pub use sync::SyncCounter;
 pub use types::{Error, NodeId, Result};

@@ -36,6 +36,8 @@ pub enum Error {
     PdoTooLong,
     /// A PDO mapping's fixed capacity is exhausted.
     MappingFull,
+    /// A SYNC counter overflow value outside `0` or `2..=240`.
+    InvalidSyncCounter,
 }
 
 impl fmt::Display for Error {
@@ -54,6 +56,7 @@ impl fmt::Display for Error {
             Error::UnknownState => "unrecognised NMT state in heartbeat frame",
             Error::PdoTooLong => "mapped PDO objects exceed eight bytes",
             Error::MappingFull => "PDO mapping capacity exhausted",
+            Error::InvalidSyncCounter => "SYNC counter overflow must be 0 or 2..=240",
         };
         f.write_str(msg)
     }
