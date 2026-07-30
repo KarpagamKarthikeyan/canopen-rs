@@ -22,7 +22,7 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "canopen-host"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "canopen-rs",
  "embedded-can",
@@ -31,7 +31,7 @@ dependencies = [
 
 [[package]]
 name = "canopen-rs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "embedded-can",
  "heapless",
