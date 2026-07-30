@@ -33,4 +33,5 @@ pub mod types;
 pub use datatypes::{DataType, Value};
 pub use nmt::{NmtCommand, NmtState, NmtStateMachine};
 pub use object_dictionary::{AccessType, Address, Entry, ObjectDictionary};
+pub use pdo::{MappingEntry, PdoKind, PdoMapping, TransmissionType};
 pub use types::{Error, NodeId, Result};

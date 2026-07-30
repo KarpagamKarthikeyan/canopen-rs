@@ -32,6 +32,10 @@ pub enum Error {
     UnexpectedCommand,
     /// A heartbeat frame carried an unrecognised NMT state value.
     UnknownState,
+    /// A PDO's mapped objects total more than eight bytes (64 bits).
+    PdoTooLong,
+    /// A PDO mapping's fixed capacity is exhausted.
+    MappingFull,
 }
 
 impl fmt::Display for Error {
@@ -48,6 +52,8 @@ impl fmt::Display for Error {
             Error::UnsupportedTransfer => "value cannot be carried by this transfer type",
             Error::UnexpectedCommand => "unexpected SDO command byte in response",
             Error::UnknownState => "unrecognised NMT state in heartbeat frame",
+            Error::PdoTooLong => "mapped PDO objects exceed eight bytes",
+            Error::MappingFull => "PDO mapping capacity exhausted",
         };
         f.write_str(msg)
     }
