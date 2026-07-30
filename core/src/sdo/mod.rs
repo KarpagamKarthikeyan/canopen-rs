@@ -5,14 +5,17 @@
 //! a server response frame, exchanged on a pair of CAN ids (by default
 //! `0x600 + node` for requests and `0x580 + node` for responses).
 //!
-//! This module implements **expedited** transfer: a value of one to four
-//! bytes carried inline in a single request/response exchange. Segmented and
-//! block transfer follow.
+//! This module implements **expedited** and **segmented** transfer: a value of
+//! one to four bytes carried inline in a single exchange, or a larger value
+//! split across a run of segment frames. Block transfer follows.
 //!
-//! The functions here encode and decode the raw 8-byte CAN *data field* only.
-//! Selecting the CAN id (see [`request_cob_id`]/[`response_cob_id`]) and
-//! moving the frame is the transport's responsibility, keeping this codec
-//! transport-agnostic.
+//! The free functions here encode and decode the raw 8-byte CAN *data field*.
+//! On top of them, [`SdoServer`] services requests against an
+//! [`ObjectDictionary`](crate::object_dictionary::ObjectDictionary) and
+//! [`SdoClient`] drives read/write transactions — both as sans-I/O state
+//! machines that consume and produce frames without touching a bus, so the
+//! transport (see [`request_cob_id`]/[`response_cob_id`]) stays a separate
+//! concern.
 
 use heapless::Vec;
 
@@ -20,6 +23,12 @@ use crate::datatypes::{DataType, Value};
 use crate::object_dictionary::Address;
 use crate::types::NodeId;
 use crate::{Error, Result};
+
+pub mod client;
+pub mod server;
+
+pub use client::{SdoClient, SdoEvent};
+pub use server::SdoServer;
 
 /// COB-ID base for SDO client→server (request) frames: `0x600 + node id`.
 pub const SDO_REQUEST_COB_BASE: u16 = 0x600;
