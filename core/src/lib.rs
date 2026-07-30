@@ -26,6 +26,7 @@
 pub mod datatypes;
 pub mod emcy;
 pub mod nmt;
+pub mod node;
 pub mod object_dictionary;
 pub mod pdo;
 pub mod sdo;
@@ -36,6 +37,7 @@ pub mod types;
 pub use datatypes::{DataType, Value};
 pub use emcy::{EmergencyMessage, ErrorRegister};
 pub use nmt::{NmtCommand, NmtState, NmtStateMachine};
+pub use node::{Node, TxFrame};
 pub use object_dictionary::{AccessType, Address, Entry, ObjectDictionary};
 pub use pdo::{MappingEntry, PdoKind, PdoMapping, TransmissionType};
 pub use sdo::{SdoClient, SdoEvent, SdoServer, Segment, SegmentReader, SegmentWriter};

@@ -34,7 +34,7 @@ mod linux {
     use std::time::Duration;
 
     use canopen_host::transport::SocketCan;
-    use canopen_rs::sdo::SdoServer;
+    use canopen_rs::node::Node;
     use canopen_rs::{Address, DataType, Entry, NodeId, ObjectDictionary, Value};
 
     const IFACE: &str = "vcan0";
@@ -78,9 +78,9 @@ mod linux {
         Ok(())
     }
 
-    /// A minimal device node: build an OD and answer SDO requests addressed to
-    /// this node until the bus goes quiet.
-    fn serve(node: NodeId, ready: mpsc::Sender<()>) -> Result<(), Box<dyn Error>> {
+    /// A minimal device node: build an OD, boot the node, and answer requests
+    /// until the bus goes quiet.
+    fn serve(node_id: NodeId, ready: mpsc::Sender<()>) -> Result<(), Box<dyn Error>> {
         let bus = SocketCan::open(IFACE)?;
         bus.set_read_timeout(Duration::from_secs(3))?;
 
@@ -92,16 +92,14 @@ mod linux {
         od.insert(Address::new(0x1017, 0), Entry::rw(Value::Unsigned16(1000)))?;
         od.insert(Address::new(0x2000, 0), Entry::rw(Value::Unsigned64(0)))?;
 
-        let mut server = SdoServer::new(node);
+        let mut node = Node::new(node_id, od);
+        node.boot(); // enter pre-operational so SDO is served
         ready.send(()).map_err(|_| "client went away")?;
 
         // Serve until a read times out (the client is done and the bus is idle).
         while let Ok(frame) = bus.recv() {
-            if frame.cob_id != server.request_cob_id() {
-                continue;
-            }
-            if let Some(response) = server.handle(&mut od, frame.payload()) {
-                bus.send(server.response_cob_id(), &response)?;
+            if let Some(tx) = node.on_frame(frame.cob_id, frame.data()) {
+                bus.send(tx.cob_id, tx.data())?;
             }
         }
         Ok(())
