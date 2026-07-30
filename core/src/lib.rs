@@ -31,5 +31,6 @@ pub mod sdo;
 pub mod types;
 
 pub use datatypes::{DataType, Value};
+pub use nmt::{NmtCommand, NmtState, NmtStateMachine};
 pub use object_dictionary::{AccessType, Address, Entry, ObjectDictionary};
 pub use types::{Error, NodeId, Result};

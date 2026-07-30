@@ -30,6 +30,8 @@ pub enum Error {
     UnsupportedTransfer,
     /// A received frame's command byte was not the expected response.
     UnexpectedCommand,
+    /// A heartbeat frame carried an unrecognised NMT state value.
+    UnknownState,
 }
 
 impl fmt::Display for Error {
@@ -45,6 +47,7 @@ impl fmt::Display for Error {
             Error::DictionaryFull => "object dictionary capacity exhausted",
             Error::UnsupportedTransfer => "value cannot be carried by this transfer type",
             Error::UnexpectedCommand => "unexpected SDO command byte in response",
+            Error::UnknownState => "unrecognised NMT state in heartbeat frame",
         };
         f.write_str(msg)
     }
