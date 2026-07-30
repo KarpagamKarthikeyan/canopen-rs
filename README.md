@@ -61,23 +61,26 @@ Rust 1.75.**
 
 ```rust
 use canopen_rs::{Address, Entry, NodeId, ObjectDictionary, Value};
-use canopen_rs::sdo::SdoServer;
+use canopen_rs::node::Node;
 
-// Build the node's object dictionary.
+// Build the node's object dictionary and wrap it in a Node.
 let mut od = ObjectDictionary::<16>::new();
 od.insert(Address::new(0x1000, 0), Entry::constant(Value::Unsigned32(0x0004_0192)))?;
 od.insert(Address::new(0x1017, 0), Entry::rw(Value::Unsigned16(1000)))?;
+let mut node = Node::new(NodeId::new(0x10)?, od);
 
-let mut server = SdoServer::new(NodeId::new(0x10)?);
-
-// In your CAN receive loop, for each SDO request frame addressed to this node:
-if let Some(response) = server.handle(&mut od, &request) {
-    // send `response` on `server.response_cob_id()`
+let boot = node.boot();                 // enter pre-operational, announce boot-up
+// send `boot` on the bus, then in your receive loop:
+if let Some(tx) = node.on_frame(cob_id, &data) {
+    // send `tx.data()` on `tx.cob_id`
 }
 ```
 
-The server picks expedited or segmented transfer automatically and answers with
-the correct standard SDO abort codes on error.
+`Node` bundles the object dictionary, SDO server, and NMT state: `on_frame`
+serves SDO requests (expedited or segmented, with standard abort codes),
+advances NMT from node-control commands, and applies received PDOs. Add PDOs
+with `node.add_rpdo`/`add_tpdo`, and get SYNC-triggered transmit frames from
+`node.sync_tpdos()`. It's sans-I/O — the same code runs on a host or an MCU.
 
 ### Talk to a device (a master), over SocketCAN
 

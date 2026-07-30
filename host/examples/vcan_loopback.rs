@@ -33,9 +33,14 @@ mod linux {
     use std::thread;
     use std::time::Duration;
 
-    use canopen_host::transport::SocketCan;
-    use canopen_rs::node::Node;
-    use canopen_rs::{Address, DataType, Entry, NodeId, ObjectDictionary, Value};
+    use canopen_host::transport::{Received, SocketCan};
+    use canopen_rs::nmt::NMT_COMMAND_COB_ID;
+    use canopen_rs::node::{Node, MAX_PDO_MAPPING};
+    use canopen_rs::sync::SYNC_COB_ID;
+    use canopen_rs::{
+        Address, DataType, Entry, MappingEntry, NmtCommand, NodeId, ObjectDictionary, PdoMapping,
+        TransmissionType, Value,
+    };
 
     const IFACE: &str = "vcan0";
 
@@ -74,12 +79,40 @@ mod linux {
         println!("write 0x2000 (segmented) -> read = {back:?}");
         assert_eq!(back, big);
 
-        println!("\nvcan0 loopback OK — expedited and segmented SDO round-trips succeeded.");
+        // --- PDO: go operational, drive an RPDO in and a SYNC-triggered TPDO
+        //     out. RPDO1 (0x200+node) writes 0x6000/1; TPDO1 (0x180+node) maps
+        //     the same object, so a SYNC echoes back what the RPDO wrote. ---
+        let rpdo1 = 0x200 + node.raw() as u16;
+        let tpdo1 = 0x180 + node.raw() as u16;
+        bus.send(
+            NMT_COMMAND_COB_ID,
+            &[NmtCommand::StartRemoteNode as u8, node.raw()],
+        )?;
+        bus.send(rpdo1, &[0xCD, 0xAB])?; // RPDO1: 0x6000/1 <- 0xABCD
+        bus.send(SYNC_COB_ID, &[])?; // SYNC: node emits synchronous TPDOs
+
+        let tpdo = recv_cob(&bus, tpdo1)?;
+        println!("RPDO in 0xABCD -> SYNC -> TPDO out = {:02X?}", tpdo.data());
+        assert_eq!(tpdo.data(), &[0xCD, 0xAB]);
+
+        println!(
+            "\nvcan0 loopback OK — SDO (expedited + segmented), NMT, and PDO all round-tripped."
+        );
         Ok(())
     }
 
-    /// A minimal device node: build an OD, boot the node, and answer requests
-    /// until the bus goes quiet.
+    /// Receive frames until one arrives on `cob_id`.
+    fn recv_cob(bus: &SocketCan, cob_id: u16) -> Result<Received, Box<dyn Error>> {
+        loop {
+            let frame = bus.recv()?;
+            if frame.cob_id == cob_id {
+                return Ok(frame);
+            }
+        }
+    }
+
+    /// A device node: build an OD, configure a PDO pair, boot, and serve frames
+    /// (SDO, NMT, RPDO) plus SYNC-triggered TPDOs until the bus goes quiet.
     fn serve(node_id: NodeId, ready: mpsc::Sender<()>) -> Result<(), Box<dyn Error>> {
         let bus = SocketCan::open(IFACE)?;
         bus.set_read_timeout(Duration::from_secs(3))?;
@@ -91,8 +124,16 @@ mod linux {
         )?;
         od.insert(Address::new(0x1017, 0), Entry::rw(Value::Unsigned16(1000)))?;
         od.insert(Address::new(0x2000, 0), Entry::rw(Value::Unsigned64(0)))?;
+        od.insert(Address::new(0x6000, 1), Entry::rw(Value::Unsigned16(0)))?;
 
         let mut node = Node::new(node_id, od);
+        // RPDO1 receives into 0x6000/1; TPDO1 transmits it back on SYNC.
+        node.add_rpdo(0x200 + node_id.raw() as u16, mapping(0x6000, 1, 16))?;
+        node.add_tpdo(
+            0x180 + node_id.raw() as u16,
+            mapping(0x6000, 1, 16),
+            TransmissionType::SynchronousAcyclic,
+        )?;
         node.boot(); // enter pre-operational so SDO is served
         ready.send(()).map_err(|_| "client went away")?;
 
@@ -101,7 +142,20 @@ mod linux {
             if let Some(tx) = node.on_frame(frame.cob_id, frame.data()) {
                 bus.send(tx.cob_id, tx.data())?;
             }
+            if frame.cob_id == SYNC_COB_ID {
+                for tx in node.sync_tpdos() {
+                    bus.send(tx.cob_id, tx.data())?;
+                }
+            }
         }
         Ok(())
+    }
+
+    /// A single-object PDO mapping.
+    fn mapping(index: u16, subindex: u8, bits: u8) -> PdoMapping<MAX_PDO_MAPPING> {
+        let mut m = PdoMapping::new();
+        m.push(MappingEntry::new(index, subindex, bits))
+            .expect("one entry fits");
+        m
     }
 }

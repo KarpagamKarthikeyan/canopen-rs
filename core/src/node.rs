@@ -27,10 +27,22 @@
 //! }
 //! ```
 
+use heapless::Vec;
+
 use crate::nmt::{self, NmtState, NmtStateMachine};
 use crate::object_dictionary::ObjectDictionary;
+use crate::pdo::{self, PdoMapping, TransmissionType};
 use crate::sdo::{self, SdoServer};
 use crate::types::NodeId;
+use crate::{Error, Result};
+
+/// The maximum number of transmit (or receive) PDOs a [`Node`] holds — the four
+/// of the predefined connection set.
+pub const MAX_PDOS: usize = 4;
+
+/// The maximum objects mapped into one PDO: a full eight-byte frame of
+/// one-byte objects.
+pub const MAX_PDO_MAPPING: usize = 8;
 
 /// A frame to transmit: an 11-bit COB-ID and up to eight data bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,14 +71,31 @@ impl TxFrame {
     }
 }
 
-/// A CANopen device node: an object dictionary served over SDO, with NMT state
-/// and heartbeat/boot-up production.
+/// A configured receive PDO: the COB-ID it listens on and its object mapping.
+#[derive(Debug)]
+struct RpdoSlot {
+    cob_id: u16,
+    mapping: PdoMapping<MAX_PDO_MAPPING>,
+}
+
+/// A configured transmit PDO: its COB-ID, object mapping, and trigger type.
+#[derive(Debug)]
+struct TpdoSlot {
+    cob_id: u16,
+    mapping: PdoMapping<MAX_PDO_MAPPING>,
+    transmission: TransmissionType,
+}
+
+/// A CANopen device node: an object dictionary served over SDO, with NMT state,
+/// heartbeat/boot-up production, and PDO exchange.
 #[derive(Debug)]
 pub struct Node<const N: usize> {
     node_id: NodeId,
     od: ObjectDictionary<N>,
     sdo: SdoServer,
     nmt: NmtStateMachine,
+    rpdos: Vec<RpdoSlot, MAX_PDOS>,
+    tpdos: Vec<TpdoSlot, MAX_PDOS>,
 }
 
 impl<const N: usize> Node<N> {
@@ -78,7 +107,38 @@ impl<const N: usize> Node<N> {
             od,
             sdo: SdoServer::new(node_id),
             nmt: NmtStateMachine::new(),
+            rpdos: Vec::new(),
+            tpdos: Vec::new(),
         }
+    }
+
+    /// Configure a receive PDO: when a frame arrives on `cob_id` (while
+    /// operational), its bytes are unpacked into the mapped objects.
+    ///
+    /// Returns [`Error::MappingFull`] once [`MAX_PDOS`] receive PDOs are set.
+    pub fn add_rpdo(&mut self, cob_id: u16, mapping: PdoMapping<MAX_PDO_MAPPING>) -> Result<()> {
+        self.rpdos
+            .push(RpdoSlot { cob_id, mapping })
+            .map_err(|_| Error::MappingFull)
+    }
+
+    /// Configure a transmit PDO: [`Node::sync_tpdos`] packs and emits it on SYNC
+    /// (for synchronous types) and [`Node::tpdo`] emits it on demand.
+    ///
+    /// Returns [`Error::MappingFull`] once [`MAX_PDOS`] transmit PDOs are set.
+    pub fn add_tpdo(
+        &mut self,
+        cob_id: u16,
+        mapping: PdoMapping<MAX_PDO_MAPPING>,
+        transmission: TransmissionType,
+    ) -> Result<()> {
+        self.tpdos
+            .push(TpdoSlot {
+                cob_id,
+                mapping,
+                transmission,
+            })
+            .map_err(|_| Error::MappingFull)
     }
 
     /// This node's id.
@@ -130,7 +190,58 @@ impl<const N: usize> Node<N> {
         } else if cob_id == self.sdo.request_cob_id() {
             self.on_sdo(data)
         } else {
+            self.on_rpdo(cob_id, data);
             None
+        }
+    }
+
+    /// The synchronous transmit PDOs to send in response to a SYNC.
+    ///
+    /// Packs every configured TPDO with a synchronous transmission type from the
+    /// current object dictionary. Empty unless the node is operational — PDOs
+    /// are exchanged only in that state (CiA 301 §7.3.5).
+    pub fn sync_tpdos(&self) -> Vec<TxFrame, MAX_PDOS> {
+        let mut frames = Vec::new();
+        if self.nmt.state() != NmtState::Operational {
+            return frames;
+        }
+        for slot in &self.tpdos {
+            if is_synchronous(slot.transmission) {
+                if let Some(frame) = self.build_tpdo(slot) {
+                    // Capacity matches self.tpdos, so this never overflows.
+                    let _ = frames.push(frame);
+                }
+            }
+        }
+        frames
+    }
+
+    /// Emit transmit PDO `index` on demand (an event-driven transmission), or
+    /// `None` if there is no such PDO or the node is not operational.
+    pub fn tpdo(&self, index: usize) -> Option<TxFrame> {
+        if self.nmt.state() != NmtState::Operational {
+            return None;
+        }
+        self.build_tpdo(self.tpdos.get(index)?)
+    }
+
+    fn build_tpdo(&self, slot: &TpdoSlot) -> Option<TxFrame> {
+        if slot.mapping.is_empty() {
+            return None;
+        }
+        let mut buf = [0u8; 8];
+        let len = pdo::pack(&slot.mapping, &self.od, &mut buf).ok()?;
+        Some(TxFrame::new(slot.cob_id, &buf[..len]))
+    }
+
+    fn on_rpdo(&mut self, cob_id: u16, data: &[u8]) {
+        // PDOs are exchanged only in the operational state.
+        if self.nmt.state() != NmtState::Operational {
+            return;
+        }
+        if let Some(i) = self.rpdos.iter().position(|r| r.cob_id == cob_id) {
+            // Disjoint field borrows: `rpdos` (shared) and `od` (mutable).
+            let _ = pdo::unpack(&self.rpdos[i].mapping, &mut self.od, data);
         }
     }
 
@@ -164,12 +275,28 @@ impl<const N: usize> Node<N> {
     }
 }
 
+/// Whether a transmission type is SYNC-triggered (as opposed to event-driven).
+fn is_synchronous(transmission: TransmissionType) -> bool {
+    matches!(
+        transmission,
+        TransmissionType::SynchronousAcyclic | TransmissionType::SynchronousCyclic(_)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::object_dictionary::{Address, Entry};
+    use crate::pdo::MappingEntry;
     use crate::sdo::{encode_download_expedited, encode_upload_request};
     use crate::{DataType, NmtCommand, Value};
+
+    fn start(n: &mut Node<8>) {
+        n.on_frame(
+            nmt::NMT_COMMAND_COB_ID,
+            &[NmtCommand::StartRemoteNode as u8, 0x10],
+        );
+    }
 
     fn od() -> ObjectDictionary<8> {
         let mut od = ObjectDictionary::new();
@@ -286,5 +413,111 @@ mod tests {
         let mut n = node();
         n.boot();
         assert!(n.on_frame(0x123, &[0; 8]).is_none());
+    }
+
+    // --- PDO ---------------------------------------------------------------
+    fn pdo_od() -> ObjectDictionary<8> {
+        let mut od = ObjectDictionary::new();
+        // TPDO source objects (readable) and an RPDO target (writable).
+        od.insert(
+            Address::new(0x6000, 1),
+            Entry::rw(Value::Unsigned16(0xBEEF)),
+        )
+        .unwrap();
+        od.insert(Address::new(0x6000, 2), Entry::rw(Value::Unsigned8(0x42)))
+            .unwrap();
+        od.insert(Address::new(0x6200, 1), Entry::rw(Value::Unsigned16(0)))
+            .unwrap();
+        od
+    }
+
+    fn mapping(entries: &[(u16, u8, u8)]) -> PdoMapping<MAX_PDO_MAPPING> {
+        let mut m = PdoMapping::new();
+        for &(index, sub, bits) in entries {
+            m.push(MappingEntry::new(index, sub, bits)).unwrap();
+        }
+        m
+    }
+
+    #[test]
+    fn tpdo_transmits_only_when_operational() {
+        let mut n = Node::new(NodeId::new(0x10).unwrap(), pdo_od());
+        n.add_tpdo(
+            0x18A,
+            mapping(&[(0x6000, 1, 16), (0x6000, 2, 8)]),
+            TransmissionType::SynchronousAcyclic,
+        )
+        .unwrap();
+        n.boot();
+
+        // Pre-operational: no PDO traffic.
+        assert!(n.sync_tpdos().is_empty());
+
+        start(&mut n);
+        let frames = n.sync_tpdos();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].cob_id, 0x18A);
+        // U16 0xBEEF little-endian then U8 0x42.
+        assert_eq!(frames[0].data(), &[0xEF, 0xBE, 0x42]);
+    }
+
+    #[test]
+    fn event_tpdo_by_index() {
+        let mut n = Node::new(NodeId::new(0x10).unwrap(), pdo_od());
+        // Event-driven type is not emitted by sync_tpdos, only by tpdo().
+        n.add_tpdo(
+            0x18A,
+            mapping(&[(0x6000, 2, 8)]),
+            TransmissionType::EventDrivenProfile,
+        )
+        .unwrap();
+        n.boot();
+        start(&mut n);
+        assert!(n.sync_tpdos().is_empty());
+        assert_eq!(n.tpdo(0).unwrap().data(), &[0x42]);
+        assert!(n.tpdo(1).is_none());
+    }
+
+    #[test]
+    fn rpdo_applies_only_when_operational() {
+        let mut n = Node::new(NodeId::new(0x10).unwrap(), pdo_od());
+        n.add_rpdo(0x20A, mapping(&[(0x6200, 1, 16)])).unwrap();
+        n.boot();
+
+        // Pre-operational: the RPDO is ignored.
+        assert!(n.on_frame(0x20A, &[0x34, 0x12]).is_none());
+        assert_eq!(
+            n.od().read(Address::new(0x6200, 1)).unwrap(),
+            Value::Unsigned16(0)
+        );
+
+        // Operational: the frame is unpacked into the object dictionary.
+        start(&mut n);
+        n.on_frame(0x20A, &[0x34, 0x12]);
+        assert_eq!(
+            n.od().read(Address::new(0x6200, 1)).unwrap(),
+            Value::Unsigned16(0x1234)
+        );
+    }
+
+    #[test]
+    fn pdo_capacity_is_enforced() {
+        let mut n = Node::new(NodeId::new(0x10).unwrap(), pdo_od());
+        for _ in 0..MAX_PDOS {
+            n.add_tpdo(
+                0x18A,
+                mapping(&[(0x6000, 2, 8)]),
+                TransmissionType::SynchronousAcyclic,
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            n.add_tpdo(
+                0x18A,
+                mapping(&[(0x6000, 2, 8)]),
+                TransmissionType::SynchronousAcyclic
+            ),
+            Err(Error::MappingFull)
+        );
     }
 }
