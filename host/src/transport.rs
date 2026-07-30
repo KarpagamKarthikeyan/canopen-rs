@@ -1,14 +1,19 @@
 //! Linux SocketCAN transport for `canopen-rs`.
 //!
 //! Bridges the CANopen core codecs to a Linux SocketCAN interface. The
-//! [`socketcan`] crate's [`CanFrame`] implements the [`embedded_can`] traits,
-//! so the core's frame helpers ([`canopen_rs::transport`]) turn COB-IDs and
-//! payloads straight into bus traffic.
+//! [`socketcan`] crate's [`CanFrame`](socketcan::CanFrame) implements the
+//! [`embedded_can`] traits, so the core's frame helpers
+//! ([`canopen_rs::transport`]) turn COB-IDs and payloads straight into bus
+//! traffic.
 //!
-//! [`SocketCan::open`] binds a named interface (e.g. `"can0"`, or `"vcan0"` for
-//! a virtual bus). Beyond raw [`SocketCan::send`] / [`SocketCan::recv`], the
-//! [`SocketCan::sdo_read`] and [`SocketCan::sdo_write`] helpers run a whole SDO
-//! transaction — expedited or segmented — against a remote node in one call.
+//! [`SocketCan::open`](crate::transport::SocketCan::open) binds a named
+//! interface (e.g. `"can0"`, or `"vcan0"` for a virtual bus). Beyond raw
+//! [`SocketCan::send`](crate::transport::SocketCan::send) /
+//! [`SocketCan::recv`](crate::transport::SocketCan::recv), the
+//! [`SocketCan::sdo_read`](crate::transport::SocketCan::sdo_read) and
+//! [`SocketCan::sdo_write`](crate::transport::SocketCan::sdo_write) helpers run
+//! a whole SDO transaction — expedited or segmented — against a remote node in
+//! one call.
 //!
 //! [`socketcan`]: https://docs.rs/socketcan
 
