@@ -92,7 +92,9 @@ pub struct SocketCan {
 impl SocketCan {
     /// Open the named CAN interface (e.g. `"can0"` or `"vcan0"`).
     pub fn open(interface: &str) -> io::Result<Self> {
-        Ok(Self { socket: CanSocket::open(interface)? })
+        Ok(Self {
+            socket: CanSocket::open(interface)?,
+        })
     }
 
     /// Set a read timeout, so [`SocketCan::recv`] (and the SDO helpers) fail
@@ -109,7 +111,10 @@ impl SocketCan {
     /// Transmit `data` on COB-ID `cob_id` as a standard data frame.
     pub fn send(&self, cob_id: u16, data: &[u8]) -> io::Result<()> {
         let frame: CanFrame = frame_from(cob_id, data).ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidInput, "invalid COB-ID or over-long data")
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid COB-ID or over-long data",
+            )
         })?;
         self.socket.write_frame(&frame)
     }
@@ -126,7 +131,11 @@ impl SocketCan {
             let bytes = frame.data();
             let mut data = [0u8; 8];
             data[..bytes.len()].copy_from_slice(bytes);
-            return Ok(Received { cob_id: cob, data, len: bytes.len() });
+            return Ok(Received {
+                cob_id: cob,
+                data,
+                len: bytes.len(),
+            });
         }
     }
 
@@ -168,12 +177,7 @@ impl SocketCan {
     ///
     /// Runs the full SDO download transaction (expedited or segmented),
     /// choosing the transfer type from the value's size.
-    pub fn sdo_write(
-        &self,
-        node: NodeId,
-        addr: Address,
-        value: Value,
-    ) -> Result<(), SdoError> {
+    pub fn sdo_write(&self, node: NodeId, addr: Address, value: Value) -> Result<(), SdoError> {
         let mut client = SdoClient::new(node);
         let mut request = client.write(addr, value);
         loop {

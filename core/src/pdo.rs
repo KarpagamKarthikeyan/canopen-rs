@@ -135,7 +135,10 @@ pub struct MappingEntry {
 impl MappingEntry {
     /// Construct a mapping entry.
     pub const fn new(index: u16, subindex: u8, bit_length: u8) -> Self {
-        Self { address: Address::new(index, subindex), bit_length }
+        Self {
+            address: Address::new(index, subindex),
+            bit_length,
+        }
     }
 
     /// The `0xIIII_SSLL` mapping value stored in the OD mapping record.
@@ -172,7 +175,9 @@ impl<const N: usize> Default for PdoMapping<N> {
 impl<const N: usize> PdoMapping<N> {
     /// An empty mapping.
     pub const fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     /// Append a mapping entry.
@@ -320,8 +325,14 @@ mod tests {
             let t = TransmissionType::from_byte(byte).unwrap();
             assert_eq!(t.to_byte(), byte);
         }
-        assert_eq!(TransmissionType::from_byte(1).unwrap(), TransmissionType::SynchronousCyclic(1));
-        assert_eq!(TransmissionType::from_byte(245), Err(Error::UnsupportedTransfer));
+        assert_eq!(
+            TransmissionType::from_byte(1).unwrap(),
+            TransmissionType::SynchronousCyclic(1)
+        );
+        assert_eq!(
+            TransmissionType::from_byte(245),
+            Err(Error::UnsupportedTransfer)
+        );
     }
 
     // --- Mapping entry codec ----------------------------------------------
@@ -342,15 +353,23 @@ mod tests {
         }
         assert_eq!(m.total_bytes(), 8);
         // One more bit over the limit is rejected.
-        assert_eq!(m.push(MappingEntry::new(0x2100, 0, 8)), Err(Error::PdoTooLong));
+        assert_eq!(
+            m.push(MappingEntry::new(0x2100, 0, 8)),
+            Err(Error::PdoTooLong)
+        );
     }
 
     // --- Pack / unpack -----------------------------------------------------
     // A TPDO mapping two objects: U16 at 0x6000/1 then U8 at 0x6000/2.
     fn sample_od() -> ObjectDictionary<8> {
         let mut od = ObjectDictionary::new();
-        od.insert(Address::new(0x6000, 1), Entry::rw(Value::Unsigned16(0xBEEF))).unwrap();
-        od.insert(Address::new(0x6000, 2), Entry::rw(Value::Unsigned8(0x42))).unwrap();
+        od.insert(
+            Address::new(0x6000, 1),
+            Entry::rw(Value::Unsigned16(0xBEEF)),
+        )
+        .unwrap();
+        od.insert(Address::new(0x6000, 2), Entry::rw(Value::Unsigned8(0x42)))
+            .unwrap();
         od
     }
 
@@ -378,8 +397,14 @@ mod tests {
         let mapping = sample_mapping();
         // New values: U16 0x1234, U8 0x99.
         unpack(&mapping, &mut od, &[0x34, 0x12, 0x99]).unwrap();
-        assert_eq!(od.read(Address::new(0x6000, 1)).unwrap(), Value::Unsigned16(0x1234));
-        assert_eq!(od.read(Address::new(0x6000, 2)).unwrap(), Value::Unsigned8(0x99));
+        assert_eq!(
+            od.read(Address::new(0x6000, 1)).unwrap(),
+            Value::Unsigned16(0x1234)
+        );
+        assert_eq!(
+            od.read(Address::new(0x6000, 2)).unwrap(),
+            Value::Unsigned8(0x99)
+        );
     }
 
     #[test]
@@ -390,12 +415,20 @@ mod tests {
         let n = pack(&mapping, &od, &mut buf).unwrap();
 
         let mut dest = ObjectDictionary::<8>::new();
-        dest.insert(Address::new(0x6000, 1), Entry::rw(Value::Unsigned16(0))).unwrap();
-        dest.insert(Address::new(0x6000, 2), Entry::rw(Value::Unsigned8(0))).unwrap();
+        dest.insert(Address::new(0x6000, 1), Entry::rw(Value::Unsigned16(0)))
+            .unwrap();
+        dest.insert(Address::new(0x6000, 2), Entry::rw(Value::Unsigned8(0)))
+            .unwrap();
         unpack(&mapping, &mut dest, &buf[..n]).unwrap();
 
-        assert_eq!(dest.read(Address::new(0x6000, 1)).unwrap(), Value::Unsigned16(0xBEEF));
-        assert_eq!(dest.read(Address::new(0x6000, 2)).unwrap(), Value::Unsigned8(0x42));
+        assert_eq!(
+            dest.read(Address::new(0x6000, 1)).unwrap(),
+            Value::Unsigned16(0xBEEF)
+        );
+        assert_eq!(
+            dest.read(Address::new(0x6000, 2)).unwrap(),
+            Value::Unsigned8(0x42)
+        );
     }
 
     #[test]
@@ -409,7 +442,8 @@ mod tests {
     #[test]
     fn unpack_into_read_only_object_errors() {
         let mut od = ObjectDictionary::<4>::new();
-        od.insert(Address::new(0x6000, 1), Entry::ro(Value::Unsigned16(0))).unwrap();
+        od.insert(Address::new(0x6000, 1), Entry::ro(Value::Unsigned16(0)))
+            .unwrap();
         let mut m: PdoMapping<4> = PdoMapping::new();
         m.push(MappingEntry::new(0x6000, 1, 16)).unwrap();
         assert_eq!(unpack(&m, &mut od, &[0, 0]), Err(Error::ReadOnly));

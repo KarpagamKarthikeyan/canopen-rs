@@ -82,7 +82,11 @@ impl SyncCounter {
         if !self.is_counting() {
             return None;
         }
-        self.value = if self.value >= self.overflow { 1 } else { self.value + 1 };
+        self.value = if self.value >= self.overflow {
+            1
+        } else {
+            self.value + 1
+        };
         Some(self.value)
     }
 }

@@ -53,8 +53,8 @@ const CCS_DOWNLOAD_SEGMENT: u8 = 0x00; // client: 000xxxxx
 const CCS_DOWNLOAD_INITIATE: u8 = 0x20; // client: 001xxxxx
 const CCS_UPLOAD_INITIATE: u8 = 0x40; // client: 010xxxxx
 const CCS_UPLOAD_SEGMENT: u8 = 0x60; // client: 011xxxxx
-// The server's upload-segment specifier (scs 000) equals CCS_DOWNLOAD_SEGMENT,
-// which is why one data-segment codec serves both directions.
+                                     // The server's upload-segment specifier (scs 000) equals CCS_DOWNLOAD_SEGMENT,
+                                     // which is why one data-segment codec serves both directions.
 const SCS_DOWNLOAD_SEGMENT: u8 = 0x20; // server: 001xxxxx
 const SCS_UPLOAD_INITIATE: u8 = 0x40; // server: 010xxxxx
 const SCS_DOWNLOAD_INITIATE: u8 = 0x60; // server: 011xxxxx
@@ -280,9 +280,7 @@ pub fn encode_upload_initiate_segmented_response(addr: Address, size: u32) -> Sd
 /// response, or if it is expedited (use [`decode_upload_expedited_response`]
 /// for that case).
 pub fn decode_upload_initiate_segmented_response(p: &SdoPayload) -> Result<(Address, u32)> {
-    if p[0] & CS_MASK != SCS_UPLOAD_INITIATE
-        || p[0] & EXPEDITED != 0
-        || p[0] & SIZE_INDICATED == 0
+    if p[0] & CS_MASK != SCS_UPLOAD_INITIATE || p[0] & EXPEDITED != 0 || p[0] & SIZE_INDICATED == 0
     {
         return Err(Error::UnexpectedCommand);
     }
@@ -376,7 +374,11 @@ impl<'a> SegmentWriter<'a> {
     /// Start splitting `data` (which should be the >4-byte value already
     /// declared in the initiate request).
     pub const fn new(data: &'a [u8]) -> Self {
-        Self { data, pos: 0, toggle: false }
+        Self {
+            data,
+            pos: 0,
+            toggle: false,
+        }
     }
 
     /// Whether every byte has been emitted.
@@ -419,7 +421,11 @@ impl<const N: usize> Default for SegmentReader<N> {
 impl<const N: usize> SegmentReader<N> {
     /// A new, empty reassembler.
     pub const fn new() -> Self {
-        Self { buf: Vec::new(), toggle: false, done: false }
+        Self {
+            buf: Vec::new(),
+            toggle: false,
+            done: false,
+        }
     }
 
     /// Whether the final segment has been received.
@@ -444,7 +450,9 @@ impl<const N: usize> SegmentReader<N> {
         if segment.toggle != self.toggle {
             return Err(Error::ToggleMismatch);
         }
-        self.buf.extend_from_slice(segment.data).map_err(|_| Error::Overflow)?;
+        self.buf
+            .extend_from_slice(segment.data)
+            .map_err(|_| Error::Overflow)?;
         self.toggle = !self.toggle;
         if segment.last {
             self.done = true;
@@ -471,9 +479,8 @@ mod tests {
     // size indicated, 4 data bytes. Index and value are little-endian.
     #[test]
     fn download_u32_matches_known_frame() {
-        let f =
-            encode_download_expedited(Address::new(0x2000, 0), &Value::Unsigned32(0x1234_5678))
-                .unwrap();
+        let f = encode_download_expedited(Address::new(0x2000, 0), &Value::Unsigned32(0x1234_5678))
+            .unwrap();
         assert_eq!(f, [0x23, 0x00, 0x20, 0x00, 0x78, 0x56, 0x34, 0x12]);
     }
 
@@ -481,7 +488,8 @@ mod tests {
     // Command 0x2F = download initiate, expedited, size indicated, 1 data byte.
     #[test]
     fn download_u8_matches_known_frame() {
-        let f = encode_download_expedited(Address::new(0x2001, 0), &Value::Unsigned8(0x7F)).unwrap();
+        let f =
+            encode_download_expedited(Address::new(0x2001, 0), &Value::Unsigned8(0x7F)).unwrap();
         assert_eq!(f, [0x2F, 0x01, 0x20, 0x00, 0x7F, 0x00, 0x00, 0x00]);
     }
 
@@ -496,7 +504,10 @@ mod tests {
     fn download_response_roundtrips() {
         let f = encode_download_response(Address::new(0x2000, 0));
         assert_eq!(f, [0x60, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        assert_eq!(decode_download_response(&f).unwrap(), Address::new(0x2000, 0));
+        assert_eq!(
+            decode_download_response(&f).unwrap(),
+            Address::new(0x2000, 0)
+        );
     }
 
     #[test]
@@ -521,8 +532,7 @@ mod tests {
     #[test]
     fn upload_response_device_type_decodes() {
         let f = [0x43, 0x00, 0x10, 0x00, 0x92, 0x01, 0x00, 0x00];
-        let (addr, value) =
-            decode_upload_expedited_response(&f, DataType::Unsigned32).unwrap();
+        let (addr, value) = decode_upload_expedited_response(&f, DataType::Unsigned32).unwrap();
         assert_eq!(addr, Address::new(0x1000, 0));
         assert_eq!(value, Value::Unsigned32(0x0000_0192));
     }
@@ -576,7 +586,10 @@ mod tests {
     fn download_initiate_segmented_matches_known_frame() {
         let f = encode_download_initiate_segmented(Address::new(0x2000, 0), 20);
         assert_eq!(f, [0x21, 0x00, 0x20, 0x00, 20, 0x00, 0x00, 0x00]);
-        assert_eq!(decode_download_initiate_segmented(&f).unwrap(), (Address::new(0x2000, 0), 20));
+        assert_eq!(
+            decode_download_initiate_segmented(&f).unwrap(),
+            (Address::new(0x2000, 0), 20)
+        );
     }
 
     // Known-good frame: segmented upload initiate response, 20-byte value from
@@ -623,12 +636,24 @@ mod tests {
 
     #[test]
     fn segment_ack_and_poll_toggle_roundtrip() {
-        assert_eq!(encode_download_segment_response(false), [0x20, 0, 0, 0, 0, 0, 0, 0]);
-        assert_eq!(encode_download_segment_response(true), [0x30, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(
+            encode_download_segment_response(false),
+            [0x20, 0, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(
+            encode_download_segment_response(true),
+            [0x30, 0, 0, 0, 0, 0, 0, 0]
+        );
         assert!(decode_download_segment_response(&encode_download_segment_response(true)).unwrap());
 
-        assert_eq!(encode_upload_segment_request(false), [0x60, 0, 0, 0, 0, 0, 0, 0]);
-        assert_eq!(encode_upload_segment_request(true), [0x70, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(
+            encode_upload_segment_request(false),
+            [0x60, 0, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(
+            encode_upload_segment_request(true),
+            [0x70, 0, 0, 0, 0, 0, 0, 0]
+        );
         assert!(decode_upload_segment_request(&encode_upload_segment_request(true)).unwrap());
     }
 
@@ -659,9 +684,19 @@ mod tests {
     fn reader_rejects_toggle_out_of_sequence() {
         let mut reader = SegmentReader::<16>::new();
         // Second push should expect toggle=true; supplying false must fail.
-        reader.push(&Segment { toggle: false, last: false, data: &[1, 2, 3] }).unwrap();
+        reader
+            .push(&Segment {
+                toggle: false,
+                last: false,
+                data: &[1, 2, 3],
+            })
+            .unwrap();
         assert_eq!(
-            reader.push(&Segment { toggle: false, last: true, data: &[4, 5] }),
+            reader.push(&Segment {
+                toggle: false,
+                last: true,
+                data: &[4, 5]
+            }),
             Err(Error::ToggleMismatch)
         );
     }
@@ -670,7 +705,11 @@ mod tests {
     fn reader_overflow_is_reported() {
         let mut reader = SegmentReader::<4>::new();
         assert_eq!(
-            reader.push(&Segment { toggle: false, last: false, data: &[1, 2, 3, 4, 5] }),
+            reader.push(&Segment {
+                toggle: false,
+                last: false,
+                data: &[1, 2, 3, 4, 5]
+            }),
             Err(Error::Overflow)
         );
     }

@@ -29,9 +29,10 @@ use heapless::Vec;
 
 use super::{
     decode_abort, decode_data_segment, decode_download_response, decode_download_segment_response,
-    decode_upload_expedited_response, decode_upload_initiate_segmented_response, encode_data_segment,
-    encode_download_expedited, encode_download_initiate_segmented, encode_upload_request,
-    encode_upload_segment_request, request_cob_id, response_cob_id, SdoPayload, SEGMENT_DATA_MAX,
+    decode_upload_expedited_response, decode_upload_initiate_segmented_response,
+    encode_data_segment, encode_download_expedited, encode_download_initiate_segmented,
+    encode_upload_request, encode_upload_segment_request, request_cob_id, response_cob_id,
+    SdoPayload, SEGMENT_DATA_MAX,
 };
 use crate::datatypes::{DataType, Value};
 use crate::object_dictionary::Address;
@@ -60,13 +61,27 @@ enum State {
     /// Awaiting the response to an expedited download (write).
     DownloadExpedited,
     /// Awaiting the segmented-download initiate response, then sending segments.
-    DownloadInit { data: [u8; 8], len: usize },
+    DownloadInit {
+        data: [u8; 8],
+        len: usize,
+    },
     /// Awaiting the acknowledgement of the last-sent segment.
-    DownloadSeg { data: [u8; 8], len: usize, pos: usize, last_toggle: bool },
+    DownloadSeg {
+        data: [u8; 8],
+        len: usize,
+        pos: usize,
+        last_toggle: bool,
+    },
     /// Awaiting the upload initiate response.
-    UploadInit { data_type: DataType },
+    UploadInit {
+        data_type: DataType,
+    },
     /// Awaiting the next upload data segment; `toggle` is the polled toggle.
-    UploadSeg { data_type: DataType, buf: Vec<u8, 8>, toggle: bool },
+    UploadSeg {
+        data_type: DataType,
+        buf: Vec<u8, 8>,
+        toggle: bool,
+    },
 }
 
 /// An SDO client bound to the target node's id.
@@ -79,7 +94,10 @@ pub struct SdoClient {
 impl SdoClient {
     /// Create a client targeting `node`.
     pub const fn new(node: NodeId) -> Self {
-        Self { node, state: State::Idle }
+        Self {
+            node,
+            state: State::Idle,
+        }
     }
 
     /// The COB-ID the client transmits requests on (`0x600 + node`).
@@ -130,13 +148,18 @@ impl SdoClient {
             State::Idle => SdoEvent::Aborted(ABORT_GENERAL),
             State::DownloadExpedited => self.on_download_expedited(resp),
             State::DownloadInit { data, len } => self.on_download_init(resp, data, len),
-            State::DownloadSeg { data, len, pos, last_toggle } => {
-                self.on_download_seg(resp, data, len, pos, last_toggle)
-            }
+            State::DownloadSeg {
+                data,
+                len,
+                pos,
+                last_toggle,
+            } => self.on_download_seg(resp, data, len, pos, last_toggle),
             State::UploadInit { data_type } => self.on_upload_init(resp, data_type),
-            State::UploadSeg { data_type, buf, toggle } => {
-                self.on_upload_seg(resp, data_type, buf, toggle)
-            }
+            State::UploadSeg {
+                data_type,
+                buf,
+                toggle,
+            } => self.on_upload_seg(resp, data_type, buf, toggle),
         }
     }
 
@@ -179,12 +202,23 @@ impl SdoClient {
 
     /// Emit the next download data segment starting at `pos` with `toggle`, and
     /// park in [`State::DownloadSeg`] awaiting its acknowledgement.
-    fn send_download_segment(&mut self, data: [u8; 8], len: usize, pos: usize, toggle: bool) -> SdoEvent {
+    fn send_download_segment(
+        &mut self,
+        data: [u8; 8],
+        len: usize,
+        pos: usize,
+        toggle: bool,
+    ) -> SdoEvent {
         let remaining = len - pos;
         let n = remaining.min(SEGMENT_DATA_MAX);
         let last = remaining <= SEGMENT_DATA_MAX;
         let frame = encode_data_segment(&data[pos..pos + n], toggle, last).expect("1..=7");
-        self.state = State::DownloadSeg { data, len, pos: pos + n, last_toggle: toggle };
+        self.state = State::DownloadSeg {
+            data,
+            len,
+            pos: pos + n,
+            last_toggle: toggle,
+        };
         SdoEvent::Send(frame)
     }
 
@@ -194,7 +228,11 @@ impl SdoClient {
             return SdoEvent::Complete(Some(value));
         }
         if decode_upload_initiate_segmented_response(resp).is_ok() {
-            self.state = State::UploadSeg { data_type, buf: Vec::new(), toggle: false };
+            self.state = State::UploadSeg {
+                data_type,
+                buf: Vec::new(),
+                toggle: false,
+            };
             return SdoEvent::Send(encode_upload_segment_request(false));
         }
         SdoEvent::Aborted(ABORT_GENERAL)
@@ -224,7 +262,11 @@ impl SdoClient {
             }
         } else {
             let next = !toggle;
-            self.state = State::UploadSeg { data_type, buf, toggle: next };
+            self.state = State::UploadSeg {
+                data_type,
+                buf,
+                toggle: next,
+            };
             SdoEvent::Send(encode_upload_segment_request(next))
         }
     }
@@ -252,10 +294,15 @@ mod tests {
         assert_eq!(req[0], 0x40); // upload initiate
         assert!(c.is_busy());
         // Server replies with an expedited upload response carrying 0x192.
-        let resp =
-            super::super::encode_upload_expedited_response(Address::new(0x1000, 0), &Value::Unsigned32(0x192))
-                .unwrap();
-        assert_eq!(c.on_response(&resp), SdoEvent::Complete(Some(Value::Unsigned32(0x192))));
+        let resp = super::super::encode_upload_expedited_response(
+            Address::new(0x1000, 0),
+            &Value::Unsigned32(0x192),
+        )
+        .unwrap();
+        assert_eq!(
+            c.on_response(&resp),
+            SdoEvent::Complete(Some(Value::Unsigned32(0x192)))
+        );
         assert!(!c.is_busy());
     }
 

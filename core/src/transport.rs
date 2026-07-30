@@ -62,7 +62,10 @@ mod tests {
         fn new(id: impl Into<Id>, data: &[u8]) -> Option<Self> {
             let mut buf = Vec::new();
             buf.extend_from_slice(data).ok()?;
-            Some(Self { id: id.into(), data: buf })
+            Some(Self {
+                id: id.into(),
+                data: buf,
+            })
         }
 
         fn new_remote(_id: impl Into<Id>, _dlc: usize) -> Option<Self> {
@@ -106,7 +109,10 @@ mod tests {
     #[test]
     fn extended_id_has_no_cob_id() {
         use embedded_can::ExtendedId;
-        let frame = MockFrame { id: Id::Extended(ExtendedId::new(0x1234).unwrap()), data: Vec::new() };
+        let frame = MockFrame {
+            id: Id::Extended(ExtendedId::new(0x1234).unwrap()),
+            data: Vec::new(),
+        };
         assert_eq!(cob_id(&frame), None);
     }
 }

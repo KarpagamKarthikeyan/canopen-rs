@@ -173,7 +173,9 @@ impl Default for NmtStateMachine {
 impl NmtStateMachine {
     /// A freshly powered node, in [`NmtState::Initialising`].
     pub const fn new() -> Self {
-        Self { state: NmtState::Initialising }
+        Self {
+            state: NmtState::Initialising,
+        }
     }
 
     /// The current state.
@@ -229,7 +231,10 @@ mod tests {
     // NMT frames are [command specifier, target node]. Target 0 = all nodes.
     #[test]
     fn start_broadcast_matches_known_frame() {
-        assert_eq!(encode_command(NmtCommand::StartRemoteNode, NodeId::BROADCAST), [0x01, 0x00]);
+        assert_eq!(
+            encode_command(NmtCommand::StartRemoteNode, NodeId::BROADCAST),
+            [0x01, 0x00]
+        );
     }
 
     #[test]
@@ -247,9 +252,15 @@ mod tests {
     #[test]
     fn reset_commands_match_known_frames() {
         let node = NodeId::new(0x7F).unwrap();
-        assert_eq!(encode_command(NmtCommand::EnterPreOperational, node), [0x80, 0x7F]);
+        assert_eq!(
+            encode_command(NmtCommand::EnterPreOperational, node),
+            [0x80, 0x7F]
+        );
         assert_eq!(encode_command(NmtCommand::ResetNode, node), [0x81, 0x7F]);
-        assert_eq!(encode_command(NmtCommand::ResetCommunication, node), [0x82, 0x7F]);
+        assert_eq!(
+            encode_command(NmtCommand::ResetCommunication, node),
+            [0x82, 0x7F]
+        );
     }
 
     #[test]
@@ -300,7 +311,10 @@ mod tests {
     #[test]
     fn ignores_operational_commands_while_initialising() {
         let mut sm = NmtStateMachine::new();
-        assert_eq!(sm.apply(NmtCommand::StartRemoteNode), NmtState::Initialising);
+        assert_eq!(
+            sm.apply(NmtCommand::StartRemoteNode),
+            NmtState::Initialising
+        );
     }
 
     #[test]
@@ -308,7 +322,10 @@ mod tests {
         let mut sm = NmtStateMachine::new();
         sm.boot();
         assert_eq!(sm.apply(NmtCommand::StartRemoteNode), NmtState::Operational);
-        assert_eq!(sm.apply(NmtCommand::EnterPreOperational), NmtState::PreOperational);
+        assert_eq!(
+            sm.apply(NmtCommand::EnterPreOperational),
+            NmtState::PreOperational
+        );
         assert_eq!(sm.apply(NmtCommand::StopRemoteNode), NmtState::Stopped);
         assert_eq!(sm.apply(NmtCommand::StartRemoteNode), NmtState::Operational);
     }
@@ -323,7 +340,10 @@ mod tests {
         assert_eq!(sm.boot(), NmtState::PreOperational);
 
         sm.apply(NmtCommand::StartRemoteNode);
-        assert_eq!(sm.apply(NmtCommand::ResetCommunication), NmtState::Initialising);
+        assert_eq!(
+            sm.apply(NmtCommand::ResetCommunication),
+            NmtState::Initialising
+        );
     }
 
     #[test]

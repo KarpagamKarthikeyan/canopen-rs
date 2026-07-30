@@ -72,17 +72,26 @@ pub struct Entry {
 impl Entry {
     /// A read/write entry.
     pub const fn rw(value: Value) -> Self {
-        Self { value, access: AccessType::Rw }
+        Self {
+            value,
+            access: AccessType::Rw,
+        }
     }
 
     /// A read-only entry.
     pub const fn ro(value: Value) -> Self {
-        Self { value, access: AccessType::Ro }
+        Self {
+            value,
+            access: AccessType::Ro,
+        }
     }
 
     /// A read-only constant entry.
     pub const fn constant(value: Value) -> Self {
-        Self { value, access: AccessType::Const }
+        Self {
+            value,
+            access: AccessType::Const,
+        }
     }
 }
 
@@ -102,7 +111,9 @@ impl<const N: usize> Default for ObjectDictionary<N> {
 impl<const N: usize> ObjectDictionary<N> {
     /// Create an empty object dictionary.
     pub const fn new() -> Self {
-        Self { entries: LinearMap::new() }
+        Self {
+            entries: LinearMap::new(),
+        }
     }
 
     /// Insert or replace the entry at `addr`.
@@ -159,8 +170,11 @@ mod tests {
     fn od() -> ObjectDictionary<8> {
         let mut od = ObjectDictionary::new();
         // 0x1000 Device type — read-only constant.
-        od.insert(Address::new(0x1000, 0), Entry::constant(Value::Unsigned32(0x0000_0192)))
-            .unwrap();
+        od.insert(
+            Address::new(0x1000, 0),
+            Entry::constant(Value::Unsigned32(0x0000_0192)),
+        )
+        .unwrap();
         // 0x1017 Producer heartbeat time — read/write.
         od.insert(Address::new(0x1017, 0), Entry::rw(Value::Unsigned16(1000)))
             .unwrap();
@@ -169,19 +183,29 @@ mod tests {
 
     #[test]
     fn read_returns_stored_value() {
-        assert_eq!(od().read(Address::new(0x1000, 0)).unwrap(), Value::Unsigned32(0x192));
+        assert_eq!(
+            od().read(Address::new(0x1000, 0)).unwrap(),
+            Value::Unsigned32(0x192)
+        );
     }
 
     #[test]
     fn read_missing_object_errors() {
-        assert_eq!(od().read(Address::new(0x9999, 0)), Err(Error::ObjectNotFound));
+        assert_eq!(
+            od().read(Address::new(0x9999, 0)),
+            Err(Error::ObjectNotFound)
+        );
     }
 
     #[test]
     fn write_updates_value() {
         let mut od = od();
-        od.write(Address::new(0x1017, 0), Value::Unsigned16(500)).unwrap();
-        assert_eq!(od.read(Address::new(0x1017, 0)).unwrap(), Value::Unsigned16(500));
+        od.write(Address::new(0x1017, 0), Value::Unsigned16(500))
+            .unwrap();
+        assert_eq!(
+            od.read(Address::new(0x1017, 0)).unwrap(),
+            Value::Unsigned16(500)
+        );
     }
 
     #[test]
@@ -205,7 +229,8 @@ mod tests {
     #[test]
     fn dictionary_full_errors() {
         let mut od: ObjectDictionary<1> = ObjectDictionary::new();
-        od.insert(Address::new(0x2000, 0), Entry::rw(Value::Unsigned8(1))).unwrap();
+        od.insert(Address::new(0x2000, 0), Entry::rw(Value::Unsigned8(1)))
+            .unwrap();
         assert_eq!(
             od.insert(Address::new(0x2001, 0), Entry::rw(Value::Unsigned8(2))),
             Err(Error::DictionaryFull)

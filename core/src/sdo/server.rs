@@ -30,9 +30,21 @@ use crate::Error;
 #[derive(Debug)]
 enum Transfer {
     /// The client is reading a value larger than four bytes from us.
-    Upload { addr: Address, data: [u8; 8], len: usize, pos: usize, toggle: bool },
+    Upload {
+        addr: Address,
+        data: [u8; 8],
+        len: usize,
+        pos: usize,
+        toggle: bool,
+    },
     /// The client is writing a value larger than four bytes to us.
-    Download { addr: Address, data_type: DataType, buf: Vec<u8, 8>, declared: usize, toggle: bool },
+    Download {
+        addr: Address,
+        data_type: DataType,
+        buf: Vec<u8, 8>,
+        declared: usize,
+        toggle: bool,
+    },
 }
 
 /// An SDO server bound to a node id, servicing requests against an object
@@ -46,7 +58,10 @@ pub struct SdoServer {
 impl SdoServer {
     /// Create a server for `node`.
     pub const fn new(node: NodeId) -> Self {
-        Self { node, transfer: None }
+        Self {
+            node,
+            transfer: None,
+        }
     }
 
     /// The COB-ID this server receives requests on (`0x600 + node`).
@@ -153,7 +168,13 @@ impl SdoServer {
         } else {
             let mut data = [0u8; 8];
             value.encode_le(&mut data[..size]).expect("size <= 8");
-            self.transfer = Some(Transfer::Upload { addr, data, len: size, pos: 0, toggle: false });
+            self.transfer = Some(Transfer::Upload {
+                addr,
+                data,
+                len: size,
+                pos: 0,
+                toggle: false,
+            });
             Some(encode_upload_initiate_segmented_response(addr, size as u32))
         }
     }
@@ -161,7 +182,13 @@ impl SdoServer {
     fn on_upload_segment(&mut self, req: &SdoPayload) -> Option<SdoPayload> {
         let want_toggle = req[0] & TOGGLE != 0;
         match self.transfer.take() {
-            Some(Transfer::Upload { addr, data, len, pos, toggle }) => {
+            Some(Transfer::Upload {
+                addr,
+                data,
+                len,
+                pos,
+                toggle,
+            }) => {
                 if want_toggle != toggle {
                     return abort(addr, SdoAbortCode::ToggleBitNotAlternated);
                 }
@@ -170,8 +197,13 @@ impl SdoServer {
                 let last = remaining <= SEGMENT_DATA_MAX;
                 let seg = encode_data_segment(&data[pos..pos + n], toggle, last).expect("1..=7");
                 if !last {
-                    self.transfer =
-                        Some(Transfer::Upload { addr, data, len, pos: pos + n, toggle: !toggle });
+                    self.transfer = Some(Transfer::Upload {
+                        addr,
+                        data,
+                        len,
+                        pos: pos + n,
+                        toggle: !toggle,
+                    });
                 }
                 Some(seg)
             }
@@ -189,7 +221,13 @@ impl SdoServer {
             Err(_) => return abort(Address::new(0, 0), SdoAbortCode::CommandInvalid),
         };
         match self.transfer.take() {
-            Some(Transfer::Download { addr, data_type, mut buf, declared, toggle }) => {
+            Some(Transfer::Download {
+                addr,
+                data_type,
+                mut buf,
+                declared,
+                toggle,
+            }) => {
                 if seg.toggle != toggle {
                     return abort(addr, SdoAbortCode::ToggleBitNotAlternated);
                 }
@@ -261,9 +299,15 @@ mod tests {
 
     fn od() -> ObjectDictionary<8> {
         let mut od = ObjectDictionary::new();
-        od.insert(Address::new(0x1000, 0), Entry::constant(Value::Unsigned32(0x0000_0192))).unwrap();
-        od.insert(Address::new(0x1017, 0), Entry::rw(Value::Unsigned16(1000))).unwrap();
-        od.insert(Address::new(0x2000, 0), Entry::rw(Value::Unsigned64(0))).unwrap();
+        od.insert(
+            Address::new(0x1000, 0),
+            Entry::constant(Value::Unsigned32(0x0000_0192)),
+        )
+        .unwrap();
+        od.insert(Address::new(0x1017, 0), Entry::rw(Value::Unsigned16(1000)))
+            .unwrap();
+        od.insert(Address::new(0x2000, 0), Entry::rw(Value::Unsigned64(0)))
+            .unwrap();
         od
     }
 
@@ -294,7 +338,10 @@ mod tests {
         .unwrap();
         let resp = server().handle(&mut od, &req).unwrap();
         assert!(super::super::decode_download_response(&resp).is_ok());
-        assert_eq!(od.read(Address::new(0x1017, 0)).unwrap(), Value::Unsigned16(1234));
+        assert_eq!(
+            od.read(Address::new(0x1017, 0)).unwrap(),
+            Value::Unsigned16(1234)
+        );
     }
 
     #[test]
@@ -309,11 +356,9 @@ mod tests {
     #[test]
     fn write_read_only_aborts() {
         let mut od = od();
-        let req = super::super::encode_download_expedited(
-            Address::new(0x1000, 0),
-            &Value::Unsigned32(1),
-        )
-        .unwrap();
+        let req =
+            super::super::encode_download_expedited(Address::new(0x1000, 0), &Value::Unsigned32(1))
+                .unwrap();
         let resp = server().handle(&mut od, &req).unwrap();
         let (_, code) = super::super::decode_abort(&resp).unwrap();
         assert_eq!(code, 0x0601_0002); // write of a read-only object
@@ -324,8 +369,7 @@ mod tests {
         let mut od = od();
         let mut s = server();
         // Start a segmented download so the server is busy.
-        let init =
-            super::super::encode_download_initiate_segmented(Address::new(0x2000, 0), 8);
+        let init = super::super::encode_download_initiate_segmented(Address::new(0x2000, 0), 8);
         s.handle(&mut od, &init).unwrap();
         assert!(s.is_busy());
         let abort_frame =

@@ -108,8 +108,16 @@ pub struct EmergencyMessage {
 
 impl EmergencyMessage {
     /// A new emergency message.
-    pub const fn new(error_code: u16, error_register: ErrorRegister, vendor_specific: [u8; 5]) -> Self {
-        Self { error_code, error_register, vendor_specific }
+    pub const fn new(
+        error_code: u16,
+        error_register: ErrorRegister,
+        vendor_specific: [u8; 5],
+    ) -> Self {
+        Self {
+            error_code,
+            error_register,
+            vendor_specific,
+        }
     }
 
     /// The *error reset / no error* message (code `0x0000`, register clear).
@@ -171,12 +179,16 @@ mod tests {
             ErrorRegister(ErrorRegister::GENERIC | ErrorRegister::VOLTAGE),
             [0xAA, 0xBB, 0xCC, 0xDD, 0xEE],
         );
-        assert_eq!(msg.encode(), [0x10, 0x32, 0x05, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE]);
+        assert_eq!(
+            msg.encode(),
+            [0x10, 0x32, 0x05, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE]
+        );
     }
 
     #[test]
     fn decode_matches_known_frame() {
-        let msg = EmergencyMessage::decode(&[0x10, 0x32, 0x05, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE]).unwrap();
+        let msg =
+            EmergencyMessage::decode(&[0x10, 0x32, 0x05, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE]).unwrap();
         assert_eq!(msg.error_code, 0x3210);
         assert!(msg.error_register.contains(ErrorRegister::VOLTAGE));
         assert!(msg.error_register.has_error());

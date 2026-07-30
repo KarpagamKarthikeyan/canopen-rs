@@ -1,5 +1,6 @@
 # canopen-rs
 
+[![CI](https://github.com/KarpagamKarthikeyan/canopen-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/KarpagamKarthikeyan/canopen-rs/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/canopen-rs.svg)](https://crates.io/crates/canopen-rs)
 [![docs.rs](https://docs.rs/canopen-rs/badge.svg)](https://docs.rs/canopen-rs)
 [![license](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](#license)
@@ -38,6 +39,21 @@ top.
 Everything in the core is `#![no_std]`, `#![deny(unsafe_code)]`, and builds for
 `thumbv7em-none-eabihf`; SDO frame codecs are validated against known-good byte
 sequences, and the client/server are exercised end-to-end.
+
+## Install
+
+```toml
+[dependencies]
+canopen-rs = "0.1"      # no_std core: OD, SDO, PDO, NMT, SYNC, EMCY
+canopen-host = "0.1"    # std host layer: SocketCAN transport + EDS parsing
+```
+
+The core is `no_std` by default; enable `std` for `std::error::Error` impls
+(`canopen-rs = { version = "0.1", features = ["std"] }`). On a microcontroller,
+depend only on `canopen-rs` and drive it with your HAL's [`embedded-can`]
+implementation — no host crate needed. In `canopen-host`, the SocketCAN
+transport is compiled only on Linux; EDS parsing builds everywhere. **MSRV:
+Rust 1.75.**
 
 ## Quickstart
 
@@ -94,6 +110,33 @@ let eds = Eds::from_file("device.eds")?;
 println!("{:?}: {} objects", eds.vendor_name, eds.objects.len());
 let od = eds.object_dictionary::<256>()?;   // the same OD type a node runs
 ```
+
+## Testing & validation
+
+```bash
+cargo test --workspace                                     # unit + integration + doc tests
+cargo build -p canopen-rs --target thumbv7em-none-eabihf   # confirm the core stays no_std
+cargo clippy --workspace --all-targets
+```
+
+- **Independent wire-format cross-check.** The frame codecs are validated
+  against [`python-canopen`], a mature implementation used against real
+  hardware — every SDO / NMT / EMCY / SYNC / PDO frame matches byte-for-byte
+  (21/21). It runs offline:
+
+  ```bash
+  python3 -m pip install canopen
+  python3 tools/interop/python_canopen_oracle.py
+  ```
+
+- **On-bus loopback (Linux, no hardware).** Run a full SDO server ↔ client
+  exchange — expedited *and* segmented — over a virtual CAN interface, the
+  first time the SocketCAN transport actually executes on a bus:
+
+  ```bash
+  sudo tools/vcan_setup.sh                               # bring up vcan0
+  cargo run -p canopen-host --example vcan_loopback
+  ```
 
 ## Design
 

@@ -7,14 +7,17 @@
 //! and subindices are hexadecimal. A Device Configuration File (DCF) shares
 //! the grammar, adding concrete `ParameterValue` fields.
 //!
-//! [`Eds::parse`] turns that text into a list of typed [`ObjectDescription`]s,
-//! and [`Eds::object_dictionary`] builds a ready-to-use core
-//! [`ObjectDictionary`] from them — the same dictionary type an embedded node
-//! runs, populated here from a file.
+//! [`Eds::parse`](crate::eds::Eds::parse) turns that text into a list of typed
+//! [`ObjectDescription`](crate::eds::ObjectDescription)s, and
+//! [`Eds::object_dictionary`](crate::eds::Eds::object_dictionary) builds a
+//! ready-to-use core [`ObjectDictionary`](canopen_rs::ObjectDictionary) from
+//! them — the same dictionary type an embedded node runs, populated here from a
+//! file.
 //!
 //! ## Supported subset
 //!
-//! * The numeric basic data types (see [`DataType`]); `VISIBLE_STRING`,
+//! * The numeric basic data types (see [`DataType`](canopen_rs::DataType));
+//!   `VISIBLE_STRING`,
 //!   `OCTET_STRING`, and `DOMAIN` objects are skipped, as the core does not
 //!   yet model variable-length values.
 //! * `DefaultValue` / `ParameterValue` as decimal or `0x…` hex, including the
@@ -106,7 +109,10 @@ pub struct ObjectDescription {
 impl ObjectDescription {
     /// The core [`Entry`] this description builds: its value and access rights.
     pub fn entry(&self) -> Entry {
-        Entry { value: self.default_value, access: self.access }
+        Entry {
+            value: self.default_value,
+            access: self.access,
+        }
     }
 }
 
@@ -144,11 +150,15 @@ impl Eds {
 
         let mut objects = Vec::new();
         for (name, fields) in &sections {
-            let Some(address) = parse_object_section(name) else { continue };
+            let Some(address) = parse_object_section(name) else {
+                continue;
+            };
             // Only sections that carry a DataType describe a stored value; a
             // RECORD/ARRAY parent section (its subindices hold the values) has
             // none and is skipped.
-            let Some(dt_raw) = fields.get("datatype") else { continue };
+            let Some(dt_raw) = fields.get("datatype") else {
+                continue;
+            };
             let Some(dt_index) = eval_int_expr(dt_raw, node_for_expr) else {
                 return Err(EdsError::InvalidValue {
                     section: name.clone(),
@@ -157,7 +167,8 @@ impl Eds {
             };
             // Skip unmodelled types (strings, DOMAIN) rather than failing the
             // whole file.
-            let Some(data_type) = u16::try_from(dt_index).ok().and_then(DataType::from_index) else {
+            let Some(data_type) = u16::try_from(dt_index).ok().and_then(DataType::from_index)
+            else {
                 continue;
             };
 
@@ -171,10 +182,12 @@ impl Eds {
                 .or_else(|| fields.get("defaultvalue"))
                 .map(String::as_str)
                 .unwrap_or("");
-            let default_value = value_from_str(data_type, raw_value, node_for_expr)
-                .ok_or_else(|| EdsError::InvalidValue {
-                    section: name.clone(),
-                    value: raw_value.to_string(),
+            let default_value =
+                value_from_str(data_type, raw_value, node_for_expr).ok_or_else(|| {
+                    EdsError::InvalidValue {
+                        section: name.clone(),
+                        value: raw_value.to_string(),
+                    }
                 })?;
 
             objects.push(ObjectDescription {
@@ -183,12 +196,20 @@ impl Eds {
                 data_type,
                 access,
                 default_value,
-                pdo_mappable: fields.get("pdomapping").map(|v| v.trim() != "0").unwrap_or(false),
+                pdo_mappable: fields
+                    .get("pdomapping")
+                    .map(|v| v.trim() != "0")
+                    .unwrap_or(false),
             });
         }
 
         objects.sort_by_key(|o| o.address);
-        Ok(Eds { vendor_name, product_name, node_id, objects })
+        Ok(Eds {
+            vendor_name,
+            product_name,
+            node_id,
+            objects,
+        })
     }
 
     /// Read and parse an EDS/DCF file from `path`.
@@ -208,7 +229,8 @@ impl Eds {
     pub fn object_dictionary<const N: usize>(&self) -> Result<ObjectDictionary<N>, EdsError> {
         let mut od = ObjectDictionary::new();
         for obj in &self.objects {
-            od.insert(obj.address, obj.entry()).map_err(|_| EdsError::TooManyObjects)?;
+            od.insert(obj.address, obj.entry())
+                .map_err(|_| EdsError::TooManyObjects)?;
         }
         Ok(od)
     }
@@ -287,12 +309,28 @@ fn value_from_str(data_type: DataType, s: &str, node_id: u8) -> Option<Value> {
     let s = s.trim();
     // Floating-point types parse the literal directly.
     match data_type {
-        DataType::Real32 => return Some(Value::Real32(if s.is_empty() { 0.0 } else { s.parse().ok()? })),
-        DataType::Real64 => return Some(Value::Real64(if s.is_empty() { 0.0 } else { s.parse().ok()? })),
+        DataType::Real32 => {
+            return Some(Value::Real32(if s.is_empty() {
+                0.0
+            } else {
+                s.parse().ok()?
+            }))
+        }
+        DataType::Real64 => {
+            return Some(Value::Real64(if s.is_empty() {
+                0.0
+            } else {
+                s.parse().ok()?
+            }))
+        }
         _ => {}
     }
     // Integer types evaluate a (possibly `$NODEID`-relative) expression.
-    let n = if s.is_empty() { 0 } else { eval_int_expr(s, node_id)? };
+    let n = if s.is_empty() {
+        0
+    } else {
+        eval_int_expr(s, node_id)?
+    };
     Some(match data_type {
         DataType::Boolean => Value::Boolean(n != 0),
         DataType::Integer8 => Value::Integer8(n as i8),
@@ -426,7 +464,10 @@ DefaultValue=1.5
     #[test]
     fn parses_float_and_pdo_flag() {
         let eds = sample();
-        assert_eq!(eds.get(Address::new(0x6000, 0)).unwrap().default_value, Value::Real32(1.5));
+        assert_eq!(
+            eds.get(Address::new(0x6000, 0)).unwrap().default_value,
+            Value::Real32(1.5)
+        );
         assert!(eds.get(Address::new(0x1017, 0)).unwrap().pdo_mappable);
         assert!(!eds.get(Address::new(0x1000, 0)).unwrap().pdo_mappable);
     }
@@ -441,19 +482,31 @@ DefaultValue=1.5
     fn builds_object_dictionary() {
         let eds = sample();
         let od = eds.object_dictionary::<16>().unwrap();
-        assert_eq!(od.read(Address::new(0x1000, 0)).unwrap(), Value::Unsigned32(0x0004_0192));
-        assert_eq!(od.read(Address::new(0x1017, 0)).unwrap(), Value::Unsigned16(1000));
+        assert_eq!(
+            od.read(Address::new(0x1000, 0)).unwrap(),
+            Value::Unsigned32(0x0004_0192)
+        );
+        assert_eq!(
+            od.read(Address::new(0x1017, 0)).unwrap(),
+            Value::Unsigned16(1000)
+        );
     }
 
     #[test]
     fn object_dictionary_capacity_is_enforced() {
         // The sample has more than two modelled objects.
-        assert!(matches!(sample().object_dictionary::<2>(), Err(EdsError::TooManyObjects)));
+        assert!(matches!(
+            sample().object_dictionary::<2>(),
+            Err(EdsError::TooManyObjects)
+        ));
     }
 
     #[test]
     fn unknown_access_type_errors() {
         let text = "[2000]\nDataType=0x0005\nAccessType=bogus\n";
-        assert!(matches!(Eds::parse(text), Err(EdsError::UnknownAccessType(_))));
+        assert!(matches!(
+            Eds::parse(text),
+            Err(EdsError::UnknownAccessType(_))
+        ));
     }
 }

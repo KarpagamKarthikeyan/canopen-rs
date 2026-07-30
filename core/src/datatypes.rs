@@ -245,7 +245,10 @@ mod tests {
     #[test]
     fn encode_rejects_short_buffer() {
         let mut buf = [0u8; 2];
-        assert_eq!(Value::Unsigned32(0).encode_le(&mut buf), Err(Error::BadLength));
+        assert_eq!(
+            Value::Unsigned32(0).encode_le(&mut buf),
+            Err(Error::BadLength)
+        );
     }
 
     #[test]
