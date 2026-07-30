@@ -25,10 +25,12 @@ use embedded_can::Frame as _;
 use socketcan::{CanFrame, CanSocket, Socket};
 
 use canopen_rs::datatypes::{DataType, Value};
+use canopen_rs::nmt::{encode_command, NMT_COMMAND_COB_ID};
 use canopen_rs::object_dictionary::Address;
 use canopen_rs::sdo::{SdoClient, SdoEvent};
 use canopen_rs::transport::{cob_id, frame_from};
 use canopen_rs::types::NodeId;
+use canopen_rs::NmtCommand;
 
 /// A CANopen frame received from the bus: its COB-ID and up to eight bytes.
 #[derive(Debug, Clone)]
@@ -142,6 +144,14 @@ impl SocketCan {
                 len: bytes.len(),
             });
         }
+    }
+
+    /// Send an NMT node-control command to `target` on COB-ID `0x000`.
+    ///
+    /// Use [`NodeId::BROADCAST`] to address every node at once — e.g.
+    /// `send_nmt(NmtCommand::StartRemoteNode, NodeId::BROADCAST)`.
+    pub fn send_nmt(&self, command: NmtCommand, target: NodeId) -> io::Result<()> {
+        self.send(NMT_COMMAND_COB_ID, &encode_command(command, target))
     }
 
     /// Receive frames until one arrives on `cob_id`, discarding the rest.

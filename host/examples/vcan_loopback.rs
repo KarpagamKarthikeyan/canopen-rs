@@ -34,7 +34,6 @@ mod linux {
     use std::time::Duration;
 
     use canopen_host::transport::{Received, SocketCan};
-    use canopen_rs::nmt::NMT_COMMAND_COB_ID;
     use canopen_rs::node::{Node, MAX_PDO_MAPPING};
     use canopen_rs::sync::SYNC_COB_ID;
     use canopen_rs::{
@@ -84,10 +83,7 @@ mod linux {
         //     the same object, so a SYNC echoes back what the RPDO wrote. ---
         let rpdo1 = 0x200 + node.raw() as u16;
         let tpdo1 = 0x180 + node.raw() as u16;
-        bus.send(
-            NMT_COMMAND_COB_ID,
-            &[NmtCommand::StartRemoteNode as u8, node.raw()],
-        )?;
+        bus.send_nmt(NmtCommand::StartRemoteNode, node)?; // -> operational
         bus.send(rpdo1, &[0xCD, 0xAB])?; // RPDO1: 0x6000/1 <- 0xABCD
         bus.send(SYNC_COB_ID, &[])?; // SYNC: node emits synchronous TPDOs
 

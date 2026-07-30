@@ -21,6 +21,24 @@
 //! whole number of bytes, which covers the overwhelming majority of real
 //! devices. Sub-byte bit packing (e.g. several `BOOLEAN`s in one byte) is a
 //! later addition.
+//!
+//! ```
+//! use canopen_rs::pdo::{pack, MappingEntry, PdoMapping};
+//! use canopen_rs::{Address, Entry, ObjectDictionary, Value};
+//!
+//! let mut od = ObjectDictionary::<4>::new();
+//! od.insert(Address::new(0x6000, 1), Entry::rw(Value::Unsigned16(0xBEEF))).unwrap();
+//! od.insert(Address::new(0x6000, 2), Entry::rw(Value::Unsigned8(0x42))).unwrap();
+//!
+//! // Map both objects into one PDO, then pack them into a frame.
+//! let mut mapping = PdoMapping::<8>::new();
+//! mapping.push(MappingEntry::new(0x6000, 1, 16)).unwrap();
+//! mapping.push(MappingEntry::new(0x6000, 2, 8)).unwrap();
+//!
+//! let mut buf = [0u8; 8];
+//! let len = pack(&mapping, &od, &mut buf).unwrap();
+//! assert_eq!(&buf[..len], &[0xEF, 0xBE, 0x42]); // U16 little-endian, then U8
+//! ```
 
 use heapless::Vec;
 

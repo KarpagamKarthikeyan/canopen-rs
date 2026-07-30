@@ -9,6 +9,22 @@
 //! [`ObjectDictionary`] is backed by a [`heapless::LinearMap`] with a
 //! compile-time capacity, so the same type serves both `no_std` embedded
 //! nodes and host tooling with no allocator.
+//!
+//! ```
+//! use canopen_rs::{Address, Entry, ObjectDictionary, Value};
+//!
+//! let mut od = ObjectDictionary::<8>::new();
+//! // 0x1017 producer heartbeat time — a read/write UNSIGNED16.
+//! od.insert(Address::new(0x1017, 0), Entry::rw(Value::Unsigned16(1000))).unwrap();
+//!
+//! assert_eq!(od.read(Address::new(0x1017, 0)).unwrap(), Value::Unsigned16(1000));
+//! od.write(Address::new(0x1017, 0), Value::Unsigned16(500)).unwrap();
+//! assert_eq!(od.read(Address::new(0x1017, 0)).unwrap(), Value::Unsigned16(500));
+//!
+//! // Access rights and data types are enforced.
+//! od.insert(Address::new(0x1000, 0), Entry::constant(Value::Unsigned32(0x192))).unwrap();
+//! assert!(od.write(Address::new(0x1000, 0), Value::Unsigned32(1)).is_err()); // read-only
+//! ```
 
 use heapless::LinearMap;
 

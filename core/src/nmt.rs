@@ -27,6 +27,22 @@
 //! Like the SDO codec, the functions here encode and decode raw CAN *data
 //! fields* only; selecting the COB-ID and moving the frame is the transport's
 //! job. [`NmtStateMachine`] is the node-side state logic, with no I/O.
+//!
+//! ```
+//! use canopen_rs::nmt::encode_command;
+//! use canopen_rs::{NmtCommand, NmtState, NmtStateMachine, NodeId};
+//!
+//! // Master side: command node 5 to start (enter operational).
+//! let frame = encode_command(NmtCommand::StartRemoteNode, NodeId::new(5).unwrap());
+//! assert_eq!(frame, [0x01, 0x05]); // [command specifier, target node]
+//!
+//! // Node side: the guarded state machine.
+//! let mut sm = NmtStateMachine::new();
+//! assert_eq!(sm.state(), NmtState::Initialising);
+//! sm.boot(); // -> pre-operational
+//! assert_eq!(sm.apply(NmtCommand::StartRemoteNode), NmtState::Operational);
+//! assert_eq!(sm.apply(NmtCommand::ResetNode), NmtState::Initialising);
+//! ```
 
 use crate::types::NodeId;
 use crate::{Error, Result};

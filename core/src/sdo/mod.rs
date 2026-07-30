@@ -16,6 +16,24 @@
 //! machines that consume and produce frames without touching a bus, so the
 //! transport (see [`request_cob_id`]/[`response_cob_id`]) stays a separate
 //! concern.
+//!
+//! # Example: encode an expedited download
+//!
+//! Writing `UNSIGNED32 0x1234_5678` to object `0x2000` is a single 8-byte
+//! request frame (see [`SdoClient`] / [`SdoServer`] to drive a whole exchange):
+//!
+//! ```
+//! use canopen_rs::sdo::encode_download_expedited;
+//! use canopen_rs::{Address, Value};
+//!
+//! let frame = encode_download_expedited(
+//!     Address::new(0x2000, 0),
+//!     &Value::Unsigned32(0x1234_5678),
+//! )
+//! .unwrap();
+//! // cmd | index (LE) | subindex | value (LE)
+//! assert_eq!(frame, [0x23, 0x00, 0x20, 0x00, 0x78, 0x56, 0x34, 0x12]);
+//! ```
 
 use heapless::Vec;
 

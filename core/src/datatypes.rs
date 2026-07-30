@@ -4,6 +4,17 @@
 //! the numeric basic data types and converts between typed [`Value`]s and
 //! their byte encoding. Variable-length types (strings, `DOMAIN`) arrive with
 //! segmented/block transfer and are added later.
+//!
+//! ```
+//! use canopen_rs::{DataType, Value};
+//!
+//! let mut buf = [0u8; 8];
+//! let n = Value::Unsigned32(0xDEAD_BEEF).encode_le(&mut buf).unwrap();
+//! assert_eq!(&buf[..n], &[0xEF, 0xBE, 0xAD, 0xDE]); // little-endian
+//!
+//! let value = Value::decode_le(DataType::Unsigned32, &buf[..n]).unwrap();
+//! assert_eq!(value, Value::Unsigned32(0xDEAD_BEEF));
+//! ```
 
 use crate::{Error, Result};
 

@@ -14,6 +14,21 @@
 //! | 3..8  | manufacturer-specific error field |
 //!
 //! A frame with error code `0x0000` signals *error reset / no error*.
+//!
+//! ```
+//! use canopen_rs::emcy::{error_code, EmergencyMessage, ErrorRegister};
+//!
+//! // An overvoltage emergency: voltage error code, with the generic and
+//! // voltage bits set in the error register.
+//! let msg = EmergencyMessage::new(
+//!     error_code::VOLTAGE,
+//!     ErrorRegister(ErrorRegister::GENERIC | ErrorRegister::VOLTAGE),
+//!     [0; 5],
+//! );
+//! let frame = msg.encode();
+//! assert_eq!(&frame[..3], &[0x00, 0x30, 0x05]); // code 0x3000 (LE), register 0x05
+//! assert_eq!(EmergencyMessage::decode(&frame).unwrap(), msg);
+//! ```
 
 use crate::types::NodeId;
 use crate::{Error, Result};

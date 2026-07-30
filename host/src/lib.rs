@@ -14,6 +14,11 @@ pub use canopen_rs;
 /// Cross-platform: EDS files are plain text and carry no OS dependency.
 pub mod eds;
 
+/// NMT master tooling: heartbeat monitoring and node health.
+///
+/// Cross-platform; sending NMT commands rides on the Linux `transport` module.
+pub mod nmt;
+
 /// Linux SocketCAN transport (compiled only on `target_os = "linux"`).
 #[cfg(target_os = "linux")]
 pub mod transport;

@@ -11,6 +11,37 @@
 //! CAN frames are represented through the [`embedded_can`] traits, so any
 //! controller or socket that implements them can carry CANopen traffic.
 //!
+//! # Example: an SDO read, transport-free
+//!
+//! A device exposes an [`ObjectDictionary`]; a [client](sdo::SdoClient) reads it
+//! from a [server](sdo::SdoServer) one frame at a time — no bus required, so the
+//! same logic runs on a host or an MCU.
+//!
+//! ```
+//! use canopen_rs::sdo::{SdoClient, SdoEvent, SdoServer};
+//! use canopen_rs::{Address, DataType, Entry, NodeId, ObjectDictionary, Value};
+//!
+//! let node = NodeId::new(0x10).unwrap();
+//!
+//! // The device's object dictionary, served by an SDO server.
+//! let mut od = ObjectDictionary::<8>::new();
+//! od.insert(Address::new(0x1000, 0), Entry::constant(Value::Unsigned32(0x1234))).unwrap();
+//! let mut server = SdoServer::new(node);
+//!
+//! // The client drives the transaction; expedited vs segmented is automatic.
+//! let mut client = SdoClient::new(node);
+//! let mut frame = client.read(Address::new(0x1000, 0), DataType::Unsigned32);
+//! let value = loop {
+//!     let response = server.handle(&mut od, &frame).expect("server replies");
+//!     match client.on_response(&response) {
+//!         SdoEvent::Send(next) => frame = next,
+//!         SdoEvent::Complete(v) => break v.unwrap(),
+//!         SdoEvent::Aborted(code) => panic!("aborted {code:#010x}"),
+//!     }
+//! };
+//! assert_eq!(value, Value::Unsigned32(0x1234));
+//! ```
+//!
 //! ## Status
 //!
 //! Early development. The API will change. See the roadmap in the workspace
