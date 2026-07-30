@@ -39,6 +39,31 @@ pub enum DataType {
 }
 
 impl DataType {
+    /// The CiA 301 data type index (e.g. `0x0007` for `UNSIGNED32`).
+    pub const fn index(self) -> u16 {
+        self as u16
+    }
+
+    /// The basic data type for a CiA 301 data type index, or `None` for an
+    /// index this crate does not yet model (e.g. the string and `DOMAIN`
+    /// types).
+    pub const fn from_index(index: u16) -> Option<Self> {
+        Some(match index {
+            0x01 => DataType::Boolean,
+            0x02 => DataType::Integer8,
+            0x03 => DataType::Integer16,
+            0x04 => DataType::Integer32,
+            0x05 => DataType::Unsigned8,
+            0x06 => DataType::Unsigned16,
+            0x07 => DataType::Unsigned32,
+            0x08 => DataType::Real32,
+            0x11 => DataType::Real64,
+            0x15 => DataType::Integer64,
+            0x1B => DataType::Unsigned64,
+            _ => return None,
+        })
+    }
+
     /// The encoded size of a value of this type, in bytes.
     pub const fn size(self) -> usize {
         match self {
@@ -173,6 +198,22 @@ mod tests {
         assert_eq!(DataType::Unsigned16.size(), 2);
         assert_eq!(DataType::Unsigned32.size(), 4);
         assert_eq!(DataType::Real64.size(), 8);
+    }
+
+    #[test]
+    fn data_type_index_roundtrips() {
+        for dt in [
+            DataType::Boolean,
+            DataType::Unsigned32,
+            DataType::Real64,
+            DataType::Integer64,
+            DataType::Unsigned64,
+        ] {
+            assert_eq!(DataType::from_index(dt.index()), Some(dt));
+        }
+        assert_eq!(DataType::Unsigned32.index(), 0x0007);
+        // Unmodelled types (e.g. VISIBLE_STRING 0x09) are rejected.
+        assert_eq!(DataType::from_index(0x09), None);
     }
 
     #[test]
