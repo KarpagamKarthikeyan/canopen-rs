@@ -7,6 +7,10 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+documentation = "https://docs.rs/canopen-host"
+readme = "../README.md"
 
 [dependencies]
 canopen-rs = { workspace = true, features = ["std"] }
@@ -15,3 +19,4 @@ canopen-rs = { workspace = true, features = ["std"] }
 # rest of the host crate (e.g. EDS parsing) still builds on macOS/Windows.
 [target.'cfg(target_os = "linux")'.dependencies]
 socketcan.workspace = true
+embedded-can.workspace = true

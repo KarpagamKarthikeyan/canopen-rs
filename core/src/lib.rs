@@ -30,6 +30,7 @@ pub mod object_dictionary;
 pub mod pdo;
 pub mod sdo;
 pub mod sync;
+pub mod transport;
 pub mod types;
 
 pub use datatypes::{DataType, Value};
