@@ -13,6 +13,7 @@ readme = "../README.md"
 
 [dependencies]
 embedded-can.workspace = true
+heapless.workspace = true
 
 [features]
 default = []

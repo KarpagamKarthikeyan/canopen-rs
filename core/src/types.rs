@@ -17,6 +17,19 @@ pub enum Error {
     ObjectNotFound,
     /// A node id outside the valid `1..=127` range was supplied.
     InvalidNodeId,
+    /// Attempt to write an object that is not writable.
+    ReadOnly,
+    /// Attempt to read an object that is not readable.
+    WriteOnly,
+    /// A value's data type did not match the object's data type.
+    TypeMismatch,
+    /// The object dictionary's fixed capacity is exhausted.
+    DictionaryFull,
+    /// The value cannot be carried by the chosen transfer (e.g. a value
+    /// larger than four bytes attempted over expedited SDO).
+    UnsupportedTransfer,
+    /// A received frame's command byte was not the expected response.
+    UnexpectedCommand,
 }
 
 impl fmt::Display for Error {
@@ -26,6 +39,12 @@ impl fmt::Display for Error {
             Error::Overflow => "value does not fit the target CANopen data type",
             Error::ObjectNotFound => "no object at the requested index/subindex",
             Error::InvalidNodeId => "node id out of range (must be 1..=127)",
+            Error::ReadOnly => "object is not writable",
+            Error::WriteOnly => "object is not readable",
+            Error::TypeMismatch => "value data type does not match the object",
+            Error::DictionaryFull => "object dictionary capacity exhausted",
+            Error::UnsupportedTransfer => "value cannot be carried by this transfer type",
+            Error::UnexpectedCommand => "unexpected SDO command byte in response",
         };
         f.write_str(msg)
     }

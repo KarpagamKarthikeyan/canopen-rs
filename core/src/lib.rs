@@ -23,10 +23,13 @@
 // Enable once the public API stabilises:
 // #![warn(missing_docs)]
 
+pub mod datatypes;
 pub mod nmt;
 pub mod object_dictionary;
 pub mod pdo;
 pub mod sdo;
 pub mod types;
 
+pub use datatypes::{DataType, Value};
+pub use object_dictionary::{AccessType, Address, Entry, ObjectDictionary};
 pub use types::{Error, NodeId, Result};
