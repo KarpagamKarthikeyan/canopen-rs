@@ -1,0 +1,32 @@
+//! # canopen-rs
+//!
+//! A `no_std`-first [CANopen] (CiA 301) protocol stack in Rust.
+//!
+//! This core crate is transport-agnostic and allocation-free: it models the
+//! object dictionary, encodes/decodes SDO and PDO messages, and drives the
+//! NMT state machine. It is designed to run unchanged on a bare-metal MCU
+//! node and on a host (Linux/SocketCAN) via the companion `canopen-host`
+//! crate.
+//!
+//! CAN frames are represented through the [`embedded_can`] traits, so any
+//! controller or socket that implements them can carry CANopen traffic.
+//!
+//! ## Status
+//!
+//! Early development. The API will change. See the roadmap in the workspace
+//! `README.md`.
+//!
+//! [CANopen]: https://www.can-cia.org/canopen/
+#![no_std]
+#![deny(unsafe_code)]
+#![warn(missing_debug_implementations)]
+// Enable once the public API stabilises:
+// #![warn(missing_docs)]
+
+pub mod nmt;
+pub mod object_dictionary;
+pub mod pdo;
+pub mod sdo;
+pub mod types;
+
+pub use types::{Error, NodeId, Result};

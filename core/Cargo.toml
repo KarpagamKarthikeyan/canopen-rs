@@ -1,0 +1,21 @@
+[package]
+name = "canopen-rs"
+description = "A no_std-first CANopen (CiA 301) protocol stack in Rust: object dictionary, SDO/PDO, NMT."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../README.md"
+
+[dependencies]
+embedded-can.workspace = true
+
+[features]
+default = []
+# `std` enables host-side conveniences (e.g. `std::error::Error` impls).
+# It must never be required by the core protocol logic.
+std = []

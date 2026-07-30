@@ -1,0 +1,17 @@
+[package]
+name = "canopen-host"
+description = "Host-side (std) transport and tooling for canopen-rs: Linux SocketCAN transport and EDS parsing."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+canopen-rs = { workspace = true, features = ["std"] }
+
+# SocketCAN is a Linux-only kernel interface; only pull it in on Linux so the
+# rest of the host crate (e.g. EDS parsing) still builds on macOS/Windows.
+[target.'cfg(target_os = "linux")'.dependencies]
+socketcan.workspace = true
