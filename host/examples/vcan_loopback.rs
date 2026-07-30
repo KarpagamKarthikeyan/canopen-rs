@@ -96,11 +96,7 @@ mod linux {
         ready.send(()).map_err(|_| "client went away")?;
 
         // Serve until a read times out (the client is done and the bus is idle).
-        loop {
-            let frame = match bus.recv() {
-                Ok(f) => f,
-                Err(_) => break, // timeout — nothing more to serve
-            };
+        while let Ok(frame) = bus.recv() {
             if frame.cob_id != server.request_cob_id() {
                 continue;
             }

@@ -73,6 +73,10 @@ jobs:
   vcan:
     name: on-bus SDO loopback (vcan0)
     runs-on: ubuntu-latest
+    # The vcan kernel module is not guaranteed on hosted runners; this job runs
+    # the on-bus test opportunistically and does not block CI. The authoritative
+    # on-bus validation is `tools/vcan_setup.sh` + this example on your own box.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -81,6 +85,8 @@ jobs:
       # end-to-end (expedited + segmented SDO) over it.
       - name: Set up vcan0
         run: |
+          sudo apt-get update
+          sudo apt-get install -y "linux-modules-extra-$(uname -r)"
           sudo modprobe vcan
           sudo ip link add dev vcan0 type vcan
           sudo ip link set up vcan0
