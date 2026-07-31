@@ -42,6 +42,7 @@ use crate::object_dictionary::Address;
 use crate::types::NodeId;
 use crate::{Error, Result};
 
+pub mod block;
 pub mod client;
 pub mod server;
 

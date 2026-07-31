@@ -212,6 +212,22 @@ check("LSS inquire node-id",
       lss_byte(pylss.CS_INQUIRE_NODE_ID), [0x5E, 0, 0, 0, 0, 0, 0, 0])
 
 
+# ---- SDO block download: command bytes (python's constants) + CRC ----
+import binascii  # noqa: E402
+from canopen.sdo import constants as sdoc  # noqa: E402
+
+check("block download initiate cmd (crc + size)",
+      [sdoc.REQUEST_BLOCK_DOWNLOAD | sdoc.INITIATE_BLOCK_TRANSFER
+       | sdoc.CRC_SUPPORTED | sdoc.BLOCK_SIZE_SPECIFIED], [0xC6])
+check("block download sub-block response cmd",
+      [sdoc.RESPONSE_BLOCK_DOWNLOAD | sdoc.BLOCK_TRANSFER_RESPONSE], [0xA2])
+check("block download end cmd (n=5)",
+      [sdoc.REQUEST_BLOCK_DOWNLOAD | sdoc.END_BLOCK_TRANSFER | (5 << 2)], [0xD5])
+# python-canopen computes the block CRC with binascii.crc_hqx (CRC-16/XMODEM).
+check("block transfer CRC-16 of '123456789'",
+      struct.pack(">H", binascii.crc_hqx(b"123456789", 0)), [0x31, 0xC3])
+
+
 print()
 passed = sum(results)
 total = len(results)

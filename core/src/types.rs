@@ -40,6 +40,8 @@ pub enum Error {
     InvalidSyncCounter,
     /// An SDO segment's toggle bit did not alternate as required.
     ToggleMismatch,
+    /// A block-transfer CRC did not match the received data.
+    CrcMismatch,
 }
 
 impl fmt::Display for Error {
@@ -60,6 +62,7 @@ impl fmt::Display for Error {
             Error::MappingFull => "PDO mapping capacity exhausted",
             Error::InvalidSyncCounter => "SYNC counter overflow must be 0 or 2..=240",
             Error::ToggleMismatch => "SDO segment toggle bit did not alternate",
+            Error::CrcMismatch => "block-transfer CRC did not match the data",
         };
         f.write_str(msg)
     }
