@@ -29,6 +29,7 @@
 
 use heapless::Vec;
 
+use crate::lss::{self, LssAddress, LssSlave};
 use crate::nmt::{self, NmtState, NmtStateMachine};
 use crate::object_dictionary::ObjectDictionary;
 use crate::pdo::{self, PdoMapping, TransmissionType};
@@ -96,6 +97,7 @@ pub struct Node<const N: usize> {
     nmt: NmtStateMachine,
     rpdos: Vec<RpdoSlot, MAX_PDOS>,
     tpdos: Vec<TpdoSlot, MAX_PDOS>,
+    lss: Option<LssSlave>,
 }
 
 impl<const N: usize> Node<N> {
@@ -109,7 +111,44 @@ impl<const N: usize> Node<N> {
             nmt: NmtStateMachine::new(),
             rpdos: Vec::new(),
             tpdos: Vec::new(),
+            lss: None,
         }
+    }
+
+    /// Enable LSS with this node's 128-bit identity ([`LssAddress`], object
+    /// `0x1018`). The node then answers LSS master requests on `0x7E5`, letting
+    /// a master (re)assign its node-id over the bus.
+    ///
+    /// A node awaiting an LSS-assigned id should be left in
+    /// [`NmtState::Initialising`] (do not call [`Node::boot`]) so it serves only
+    /// LSS; after the id is assigned, call [`Node::apply_lss_node_id`] then boot.
+    pub fn enable_lss(&mut self, address: LssAddress) {
+        self.lss = Some(LssSlave::new(address, self.node_id.raw()));
+    }
+
+    /// Change the node-id, rebuilding the SDO server for the new COB-IDs. Call
+    /// on the reset that follows an LSS reconfiguration.
+    pub fn set_node_id(&mut self, node_id: NodeId) {
+        self.node_id = node_id;
+        self.sdo = SdoServer::new(node_id);
+    }
+
+    /// Adopt a node-id assigned over LSS: if the LSS slave holds a valid pending
+    /// id, apply it (rebuilding the SDO server) and return it. Call this on the
+    /// node's reset after an LSS configuration.
+    pub fn apply_lss_node_id(&mut self) -> Option<NodeId> {
+        let pending = self.lss.as_ref()?.pending_node_id();
+        let node_id = NodeId::new(pending).ok()?;
+        self.set_node_id(node_id);
+        if let Some(lss) = &mut self.lss {
+            lss.adopt_pending();
+        }
+        Some(node_id)
+    }
+
+    /// The LSS slave, if LSS is enabled (e.g. to read its pending node-id).
+    pub fn lss(&self) -> Option<&LssSlave> {
+        self.lss.as_ref()
     }
 
     /// Configure a receive PDO: when a frame arrives on `cob_id` (while
@@ -179,20 +218,34 @@ impl<const N: usize> Node<N> {
 
     /// Process an incoming CAN frame, returning a response to transmit, if any.
     ///
-    /// Handles NMT node-control (`0x000`) by advancing the state machine, and
-    /// SDO requests (`0x600 + node`) by serving the object dictionary. SDO is
-    /// answered only in pre-operational and operational states, per CiA 301.
-    /// Frames for other COB-IDs are ignored.
+    /// Handles NMT node-control (`0x000`), SDO requests (`0x600 + node`), LSS
+    /// master requests (`0x7E5`, when enabled), and received PDOs. SDO is served
+    /// only in pre-operational and operational states, and PDOs only in
+    /// operational, per CiA 301; LSS is served regardless of NMT state. Frames
+    /// for other COB-IDs are ignored.
     pub fn on_frame(&mut self, cob_id: u16, data: &[u8]) -> Option<TxFrame> {
         if cob_id == nmt::NMT_COMMAND_COB_ID {
             self.on_nmt(data);
             None
+        } else if cob_id == lss::LSS_MASTER_COB_ID {
+            self.on_lss(data)
         } else if cob_id == self.sdo.request_cob_id() {
             self.on_sdo(data)
         } else {
             self.on_rpdo(cob_id, data);
             None
         }
+    }
+
+    fn on_lss(&mut self, data: &[u8]) -> Option<TxFrame> {
+        let lss = self.lss.as_mut()?;
+        if data.len() > 8 {
+            return None;
+        }
+        let mut frame: lss::LssFrame = [0u8; 8];
+        frame[..data.len()].copy_from_slice(data);
+        lss.handle(&frame)
+            .map(|resp| TxFrame::new(lss::LSS_SLAVE_COB_ID, &resp))
     }
 
     /// The synchronous transmit PDOs to send in response to a SYNC.
@@ -519,5 +572,63 @@ mod tests {
             ),
             Err(Error::MappingFull)
         );
+    }
+
+    // --- LSS ---------------------------------------------------------------
+    use crate::lss::{self, encode_configure_node_id, encode_switch_global, LssAddress, LssState};
+
+    fn lss_address() -> LssAddress {
+        LssAddress {
+            vendor_id: 0x1F,
+            product_code: 0x2A,
+            revision_number: 1,
+            serial_number: 0x99,
+        }
+    }
+
+    #[test]
+    fn routes_lss_frames_when_enabled() {
+        let mut n = node();
+        n.enable_lss(lss_address());
+        // Switch into configuration via LSS (COB-ID 0x7E5), no response.
+        assert!(n
+            .on_frame(lss::LSS_MASTER_COB_ID, &encode_switch_global(true))
+            .is_none());
+        assert_eq!(n.lss().unwrap().state(), LssState::Configuration);
+    }
+
+    #[test]
+    fn lss_frames_ignored_when_disabled() {
+        let mut n = node(); // LSS not enabled
+        assert!(n
+            .on_frame(lss::LSS_MASTER_COB_ID, &encode_switch_global(true))
+            .is_none());
+        assert!(n.lss().is_none());
+    }
+
+    #[test]
+    fn lss_assigns_node_id_and_moves_sdo_cob_id() {
+        // A node that comes up unconfigured: leave it in Initialising and serve
+        // only LSS until a master assigns an id.
+        let mut n = Node::new(NodeId::new(1).unwrap(), od());
+        n.enable_lss(lss_address());
+        assert_eq!(n.node_id(), NodeId::new(1).unwrap());
+
+        // Master: switch to configuration, then assign node-id 0x20.
+        n.on_frame(lss::LSS_MASTER_COB_ID, &encode_switch_global(true));
+        let resp = n
+            .on_frame(lss::LSS_MASTER_COB_ID, &encode_configure_node_id(0x20))
+            .expect("configure response");
+        assert_eq!(resp.cob_id, lss::LSS_SLAVE_COB_ID);
+        assert_eq!(&resp.data()[..2], &[0x11, 0x00]); // configure success
+
+        // On the node's reset, adopt the assigned id — SDO COB-ID moves.
+        assert_eq!(n.apply_lss_node_id(), Some(NodeId::new(0x20).unwrap()));
+        assert_eq!(n.node_id(), NodeId::new(0x20).unwrap());
+
+        n.boot();
+        let req = encode_upload_request(Address::new(0x1000, 0));
+        assert!(n.on_frame(0x601, &req).is_none()); // old COB-ID no longer served
+        assert!(n.on_frame(0x620, &req).is_some()); // new COB-ID (0x600 + 0x20)
     }
 }
