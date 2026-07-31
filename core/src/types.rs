@@ -1,4 +1,14 @@
 //! Foundational CANopen types shared across the stack.
+//!
+//! ```rust
+//! use canopen_rs::types::{Error, NodeId};
+//!
+//! let node = NodeId::new(0x10).unwrap();
+//! assert_eq!(node.raw(), 0x10);
+//! assert_eq!(NodeId::BROADCAST.raw(), 0);
+//! assert_eq!(NodeId::new(0), Err(Error::InvalidNodeId));
+//! assert_eq!(NodeId::new(128), Err(Error::InvalidNodeId));
+//! ```
 
 use core::fmt;
 

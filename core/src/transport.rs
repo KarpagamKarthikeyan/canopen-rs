@@ -23,6 +23,62 @@
 //! }
 //! # }
 //! ```
+//!
+//! ```rust
+//! use canopen_rs::transport::{cob_id, frame_from};
+//! use embedded_can::{Frame, Id, StandardId};
+//!
+//! #[derive(Debug)]
+//! struct MockFrame {
+//!     id: Id,
+//!     data: [u8; 8],
+//!     len: usize,
+//! }
+//!
+//! impl Frame for MockFrame {
+//!     fn new(id: impl Into<Id>, data: &[u8]) -> Option<Self> {
+//!         if data.len() > 8 {
+//!             return None;
+//!         }
+//!         let mut raw = [0u8; 8];
+//!         raw[..data.len()].copy_from_slice(data);
+//!         Some(Self {
+//!             id: id.into(),
+//!             data: raw,
+//!             len: data.len(),
+//!         })
+//!     }
+//!
+//!     fn new_remote(_id: impl Into<Id>, _dlc: usize) -> Option<Self> {
+//!         None
+//!     }
+//!
+//!     fn is_extended(&self) -> bool {
+//!         matches!(self.id, Id::Extended(_))
+//!     }
+//!
+//!     fn is_remote_frame(&self) -> bool {
+//!         false
+//!     }
+//!
+//!     fn id(&self) -> Id {
+//!         self.id
+//!     }
+//!
+//!     fn dlc(&self) -> usize {
+//!         self.len
+//!     }
+//!
+//!     fn data(&self) -> &[u8] {
+//!         &self.data[..self.len]
+//!     }
+//! }
+//!
+//! let frame: MockFrame = frame_from(0x581, &[0x43, 0x00, 0x10, 0x00]).unwrap();
+//! assert_eq!(frame.id(), Id::Standard(StandardId::new(0x581).unwrap()));
+//! assert_eq!(cob_id(&frame), Some(0x581));
+//! assert_eq!(frame.data(), &[0x43, 0x00, 0x10, 0x00]);
+//! ```
 
 use embedded_can::{Frame, Id, StandardId};
 

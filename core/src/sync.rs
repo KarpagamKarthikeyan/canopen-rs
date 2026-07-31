@@ -10,6 +10,24 @@
 //!
 //! The default COB-ID is `0x080` ([`SYNC_COB_ID`]), configurable via object
 //! `0x1005`.
+//!
+//! ```rust
+//! use canopen_rs::sync::{decode, encode_counter, is_valid_counter_overflow, SyncCounter};
+//! use canopen_rs::Error;
+//!
+//! let mut counter = SyncCounter::new(4).unwrap();
+//! assert_eq!(counter.advance(), Some(1));
+//! assert_eq!(counter.advance(), Some(2));
+//! assert_eq!(counter.advance(), Some(3));
+//! assert_eq!(counter.advance(), Some(4));
+//! assert_eq!(counter.advance(), Some(1));
+//!
+//! assert_eq!(decode(&[]).unwrap(), None);
+//! assert_eq!(decode(&[7]).unwrap(), Some(7));
+//! assert_eq!(encode_counter(9), [9]);
+//! assert!(is_valid_counter_overflow(0));
+//! assert_eq!(SyncCounter::new(1), Err(Error::InvalidSyncCounter));
+//! ```
 
 use crate::{Error, Result};
 
