@@ -180,6 +180,28 @@ impl<const N: usize> Node<N> {
             .map_err(|_| Error::MappingFull)
     }
 
+    /// (Re)build the PDO configuration from the PDO parameter objects in the
+    /// object dictionary — communication parameters at `0x1400`+ (RPDO) /
+    /// `0x1800`+ (TPDO) and mapping parameters at `0x1600`+ / `0x1A00`+ (CiA 301
+    /// §7.5.2). Call this after a master configures PDOs by writing those
+    /// objects over SDO, so the node picks up the new layout.
+    ///
+    /// Any programmatic PDO configuration is replaced. PDOs whose communication
+    /// COB-ID has the "invalid" bit set are skipped, as are entries that are
+    /// absent or malformed.
+    pub fn configure_pdos_from_od(&mut self) {
+        self.rpdos.clear();
+        self.tpdos.clear();
+        for n in 0..MAX_PDOS as u16 {
+            if let Some(slot) = build_rpdo(&self.od, n) {
+                let _ = self.rpdos.push(slot);
+            }
+            if let Some(slot) = build_tpdo(&self.od, n) {
+                let _ = self.tpdos.push(slot);
+            }
+        }
+    }
+
     /// This node's id.
     pub fn node_id(&self) -> NodeId {
         self.node_id
@@ -336,6 +358,71 @@ fn is_synchronous(transmission: TransmissionType) -> bool {
     )
 }
 
+// --- Reading PDO parameter objects out of the object dictionary -------------
+
+fn od_u32<const N: usize>(od: &ObjectDictionary<N>, index: u16, sub: u8) -> Option<u32> {
+    match od
+        .read(crate::object_dictionary::Address::new(index, sub))
+        .ok()?
+    {
+        crate::datatypes::Value::Unsigned32(v) => Some(v),
+        _ => None,
+    }
+}
+
+fn od_u8<const N: usize>(od: &ObjectDictionary<N>, index: u16, sub: u8) -> Option<u8> {
+    match od
+        .read(crate::object_dictionary::Address::new(index, sub))
+        .ok()?
+    {
+        crate::datatypes::Value::Unsigned8(v) => Some(v),
+        _ => None,
+    }
+}
+
+/// Read a mapping-parameter record (`sub 0` = count, `sub 1..=count` = the
+/// `0xIIII_SSLL` mapping entries) into a [`PdoMapping`].
+fn read_pdo_mapping<const N: usize>(
+    od: &ObjectDictionary<N>,
+    map_index: u16,
+) -> Option<PdoMapping<MAX_PDO_MAPPING>> {
+    let count = od_u8(od, map_index, 0)?;
+    let mut mapping = PdoMapping::new();
+    for sub in 1..=count {
+        mapping
+            .push(pdo::MappingEntry::from_u32(od_u32(od, map_index, sub)?))
+            .ok()?;
+    }
+    Some(mapping)
+}
+
+fn build_rpdo<const N: usize>(od: &ObjectDictionary<N>, n: u16) -> Option<RpdoSlot> {
+    let cob_id = od_u32(od, 0x1400 + n, 1)?;
+    if !pdo::pdo_is_valid(cob_id) {
+        return None;
+    }
+    Some(RpdoSlot {
+        cob_id: pdo::pdo_can_id(cob_id),
+        mapping: read_pdo_mapping(od, 0x1600 + n)?,
+    })
+}
+
+fn build_tpdo<const N: usize>(od: &ObjectDictionary<N>, n: u16) -> Option<TpdoSlot> {
+    let cob_id = od_u32(od, 0x1800 + n, 1)?;
+    if !pdo::pdo_is_valid(cob_id) {
+        return None;
+    }
+    // Transmission type (comm sub 2); default to event-driven if absent/invalid.
+    let transmission = od_u8(od, 0x1800 + n, 2)
+        .and_then(|b| TransmissionType::from_byte(b).ok())
+        .unwrap_or(TransmissionType::EventDrivenProfile);
+    Some(TpdoSlot {
+        cob_id: pdo::pdo_can_id(cob_id),
+        mapping: read_pdo_mapping(od, 0x1A00 + n)?,
+        transmission,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -344,7 +431,7 @@ mod tests {
     use crate::sdo::{encode_download_expedited, encode_upload_request};
     use crate::{DataType, NmtCommand, Value};
 
-    fn start(n: &mut Node<8>) {
+    fn start<const N: usize>(n: &mut Node<N>) {
         n.on_frame(
             nmt::NMT_COMMAND_COB_ID,
             &[NmtCommand::StartRemoteNode as u8, 0x10],
@@ -630,5 +717,89 @@ mod tests {
         let req = encode_upload_request(Address::new(0x1000, 0));
         assert!(n.on_frame(0x601, &req).is_none()); // old COB-ID no longer served
         assert!(n.on_frame(0x620, &req).is_some()); // new COB-ID (0x600 + 0x20)
+    }
+
+    // --- PDO configuration from the object dictionary ----------------------
+    #[test]
+    fn configures_pdos_from_od() {
+        let mut od = ObjectDictionary::<16>::new();
+        // RPDO1: comm 0x1400 (COB-ID 0x210, valid), mapping 0x1600 -> 0x6200/1.
+        od.insert(Address::new(0x1400, 1), Entry::rw(Value::Unsigned32(0x210)))
+            .unwrap();
+        od.insert(Address::new(0x1600, 0), Entry::rw(Value::Unsigned8(1)))
+            .unwrap();
+        od.insert(
+            Address::new(0x1600, 1),
+            Entry::rw(Value::Unsigned32(MappingEntry::new(0x6200, 1, 16).to_u32())),
+        )
+        .unwrap();
+        // TPDO1: comm 0x1800 (COB-ID 0x190, valid, sync-cyclic), mapping -> 0x6000/1.
+        od.insert(Address::new(0x1800, 1), Entry::rw(Value::Unsigned32(0x190)))
+            .unwrap();
+        od.insert(Address::new(0x1800, 2), Entry::rw(Value::Unsigned8(1)))
+            .unwrap(); // transmission type 1
+        od.insert(Address::new(0x1A00, 0), Entry::rw(Value::Unsigned8(1)))
+            .unwrap();
+        od.insert(
+            Address::new(0x1A00, 1),
+            Entry::rw(Value::Unsigned32(MappingEntry::new(0x6000, 1, 16).to_u32())),
+        )
+        .unwrap();
+        // The mapped process-data objects.
+        od.insert(Address::new(0x6200, 1), Entry::rw(Value::Unsigned16(0)))
+            .unwrap();
+        od.insert(
+            Address::new(0x6000, 1),
+            Entry::rw(Value::Unsigned16(0xBEEF)),
+        )
+        .unwrap();
+
+        let mut n = Node::new(NodeId::new(0x10).unwrap(), od);
+        n.configure_pdos_from_od();
+        n.boot();
+        start(&mut n);
+
+        // The RPDO now applies to the OD…
+        n.on_frame(0x210, &[0x34, 0x12]);
+        assert_eq!(
+            n.od().read(Address::new(0x6200, 1)).unwrap(),
+            Value::Unsigned16(0x1234)
+        );
+        // …and the (synchronous) TPDO is emitted on SYNC.
+        let tpdos = n.sync_tpdos();
+        assert_eq!(tpdos.len(), 1);
+        assert_eq!(tpdos[0].cob_id, 0x190);
+        assert_eq!(tpdos[0].data(), &[0xEF, 0xBE]);
+    }
+
+    #[test]
+    fn skips_pdo_with_invalid_cob_id() {
+        let mut od = ObjectDictionary::<8>::new();
+        // TPDO1 with the COB-ID validity bit (31) set — disabled.
+        od.insert(
+            Address::new(0x1800, 1),
+            Entry::rw(Value::Unsigned32(0x8000_0190)),
+        )
+        .unwrap();
+        od.insert(Address::new(0x1800, 2), Entry::rw(Value::Unsigned8(1)))
+            .unwrap();
+        od.insert(Address::new(0x1A00, 0), Entry::rw(Value::Unsigned8(1)))
+            .unwrap();
+        od.insert(
+            Address::new(0x1A00, 1),
+            Entry::rw(Value::Unsigned32(MappingEntry::new(0x6000, 1, 16).to_u32())),
+        )
+        .unwrap();
+        od.insert(
+            Address::new(0x6000, 1),
+            Entry::rw(Value::Unsigned16(0xBEEF)),
+        )
+        .unwrap();
+
+        let mut n = Node::new(NodeId::new(0x10).unwrap(), od);
+        n.configure_pdos_from_od();
+        n.boot();
+        start(&mut n);
+        assert!(n.sync_tpdos().is_empty()); // the invalid TPDO was not configured
     }
 }
