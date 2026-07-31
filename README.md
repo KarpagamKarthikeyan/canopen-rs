@@ -135,9 +135,10 @@ cargo clippy --workspace --all-targets
   python3 tools/interop/python_canopen_oracle.py
   ```
 
-- **On-bus loopback (Linux, no hardware).** Run a full SDO server ↔ client
-  exchange — expedited *and* segmented — over a virtual CAN interface, the
-  first time the SocketCAN transport actually executes on a bus:
+- **On-bus loopback (Linux, no hardware).** Walk the whole stack over a virtual
+  CAN interface — LSS node-id assignment, SDO (expedited + segmented), NMT, a
+  SYNC-triggered PDO exchange, and a block transfer — exercising the SocketCAN
+  transport on a real bus:
 
   ```bash
   sudo tools/vcan_setup.sh                               # bring up vcan0
