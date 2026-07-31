@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-30
+
+Completes the CANopen lifecycle: node-id assignment over the bus, the last SDO
+transfer mode, and full on-bus verification. Backwards compatible with 0.2.x.
+
+### Added
+
+- **LSS (Layer Setting Services, CiA 305)** (`canopen-rs`): an `LssSlave` state
+  machine (switch global / selective, configure node-id, inquire identity,
+  store) plus master-side codecs — assign a node-id to an unconfigured node
+  over the bus.
+- **LSS in `Node`**: `enable_lss`, `apply_lss_node_id`, `set_node_id` — a node
+  can come up unconfigured, answer only LSS, then become a full node once a
+  master assigns its id (the SDO COB-IDs relocate with it).
+- **SDO block transfer** (`canopen-rs`, `sdo::block`): both directions
+  (download + upload), CRC-16/XMODEM, and `BlockWriter` / `BlockReceiver`
+  helpers.
+- A full-lifecycle integration test and an expanded `vcan0` example that walks
+  LSS → SDO → NMT → PDO → block transfer over a real bus.
+
+### Validated
+
+- The complete stack **runs and passes on-bus over `vcan0`**.
+- Wire format cross-checked against python-canopen (33/33 frames, now including
+  LSS and block transfer).
+
 ## [0.2.0] - 2026-07-30
 
 Adds the node runtime and master-side tooling on top of the 0.1.0 codecs, plus
@@ -51,5 +77,6 @@ both host (Linux/SocketCAN) and bare-metal MCU.
 - Wire format cross-checked byte-for-byte against `python-canopen`; CI with a
   virtual-CAN on-bus loopback.
 
+[0.3.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.3.0
 [0.2.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.2.0
 [0.1.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.1.0
