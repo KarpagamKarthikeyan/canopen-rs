@@ -223,6 +223,13 @@ check("block download sub-block response cmd",
       [sdoc.RESPONSE_BLOCK_DOWNLOAD | sdoc.BLOCK_TRANSFER_RESPONSE], [0xA2])
 check("block download end cmd (n=5)",
       [sdoc.REQUEST_BLOCK_DOWNLOAD | sdoc.END_BLOCK_TRANSFER | (5 << 2)], [0xD5])
+check("block upload initiate cmd (crc)",
+      [sdoc.REQUEST_BLOCK_UPLOAD | sdoc.INITIATE_BLOCK_TRANSFER | sdoc.CRC_SUPPORTED], [0xA4])
+check("block upload start cmd",
+      [sdoc.REQUEST_BLOCK_UPLOAD | sdoc.START_BLOCK_UPLOAD], [0xA3])
+check("block upload initiate response cmd (crc + size)",
+      [sdoc.RESPONSE_BLOCK_UPLOAD | sdoc.INITIATE_BLOCK_TRANSFER
+       | sdoc.CRC_SUPPORTED | sdoc.BLOCK_SIZE_SPECIFIED], [0xC6])
 # python-canopen computes the block CRC with binascii.crc_hqx (CRC-16/XMODEM).
 check("block transfer CRC-16 of '123456789'",
       struct.pack(">H", binascii.crc_hqx(b"123456789", 0)), [0x31, 0xC3])
