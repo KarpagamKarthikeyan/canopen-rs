@@ -33,11 +33,12 @@ top.
 | PDO mapping, TPDO pack / RPDO unpack, connection-set COB-IDs | ✅ |
 | SYNC (producer counter) and EMCY (emergency + error register) | ✅ |
 | `Node` runtime (OD + SDO + NMT + PDO exchange) | ✅ |
-| LSS slave (node-id / bit-timing configuration) | ✅ |
+| LSS (node-id assignment, incl. in `Node`) | ✅ |
+| SDO block transfer (download + upload, CRC-16) | ✅ |
 | `embedded-can` bridge + Linux SocketCAN transport | ✅ |
 | EDS / DCF file parsing → object dictionary | ✅ |
 | Host NMT master: `send_nmt` + heartbeat monitor | ✅ |
-| SDO block transfer, string / `DOMAIN` value types | planned |
+| String / `DOMAIN` value types; block transfer in the SDO client/server | planned |
 
 Everything in the core is `#![no_std]`, `#![deny(unsafe_code)]`, and builds for
 `thumbv7em-none-eabihf`; SDO frame codecs are validated against known-good byte
@@ -168,6 +169,16 @@ canopen-rs/
   model, SDO/PDO semantics, and EDS handling (host-only, BSD-licensed).
 - [`zencan`] — the most advanced Rust prior art.
 - The **CiA 301** specification as the authoritative source of truth.
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the
+workflow (DCO sign-off, local checks, and the `no_std` core vs `host` split).
+Good entry points are issues labelled
+[`good first issue`](https://github.com/KarpagamKarthikeyan/canopen-rs/labels/good%20first%20issue).
+Questions and ideas are welcome in
+[Discussions](https://github.com/KarpagamKarthikeyan/canopen-rs/discussions).
+Participation is governed by our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

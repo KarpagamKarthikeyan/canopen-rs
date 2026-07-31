@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question / discussion
+    url: https://github.com/KarpagamKarthikeyan/canopen-rs/discussions
+    about: "How would I use this for X? General questions and ideas — no formal issue needed."
