@@ -9,9 +9,10 @@ A **`no_std`-first [CANopen] (CiA 301) protocol stack in Rust**, built to run
 unchanged on a bare-metal microcontroller node *and* on a host
 (Linux/SocketCAN).
 
-> **Status: early development (0.1).** The API will change before 1.0, but the
-> object dictionary, SDO client/server, PDO, NMT, SYNC, EMCY, and EDS parsing
-> are implemented and tested.
+> **Status: early development (0.3).** The API will change before 1.0, but the
+> object dictionary, SDO client/server (expedited, segmented, block), PDO, NMT,
+> SYNC, EMCY, LSS, and EDS parsing are implemented and tested — the whole stack
+> is verified running on a bus.
 
 ## Why
 
@@ -128,8 +129,8 @@ cargo clippy --workspace --all-targets
 
 - **Independent wire-format cross-check.** The frame codecs are validated
   against [`python-canopen`], a mature implementation used against real
-  hardware — every SDO / NMT / EMCY / SYNC / PDO frame matches byte-for-byte
-  (21/21). It runs offline:
+  hardware — every SDO / NMT / EMCY / SYNC / PDO / LSS / block-transfer frame
+  matches byte-for-byte (33/33). It runs offline:
 
   ```bash
   python3 -m pip install canopen

@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-07-31
+
+Documentation only — no code changes. Published so crates.io reflects the
+current README (a published version's README cannot be edited in place).
+
+### Changed
+
+- README: corrected the status line (0.1 → 0.3) and interop count (21/21 →
+  33/33), marked block transfer and LSS as done, and added a Contributing
+  section. `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and issue/PR templates are
+  now part of the repository.
+
 ## [0.3.0] - 2026-07-30
 
 Completes the CANopen lifecycle: node-id assignment over the bus, the last SDO
@@ -77,6 +89,7 @@ both host (Linux/SocketCAN) and bare-metal MCU.
 - Wire format cross-checked byte-for-byte against `python-canopen`; CI with a
   virtual-CAN on-bus loopback.
 
+[0.3.1]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.3.1
 [0.3.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.3.0
 [0.2.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.2.0
 [0.1.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.1.0
