@@ -33,8 +33,8 @@ top.
 | NMT state machine, node-control, heartbeat + node guarding | ✅ |
 | PDO mapping, TPDO pack / RPDO unpack, connection-set COB-IDs | ✅ |
 | SYNC, EMCY (emergency + error register), and TIME | ✅ |
-| `Node` runtime (OD + SDO + NMT + PDO exchange) | ✅ |
-| LSS (node-id assignment, incl. in `Node`) | ✅ |
+| `Node` runtime (OD + SDO + NMT + PDO + EMCY / error register) | ✅ |
+| LSS (node-id assignment, selective switch, **Fastscan** discovery) | ✅ |
 | SDO block transfer (download + upload, CRC-16) | ✅ |
 | `embedded-can` bridge + Linux SocketCAN transport (blocking + `async`/tokio) | ✅ |
 | EDS / DCF file parsing → object dictionary | ✅ |
@@ -143,7 +143,7 @@ cargo clippy --workspace --all-targets
 - **Independent wire-format cross-check.** The frame codecs are validated
   against [`python-canopen`], a mature implementation used against real
   hardware — every SDO / NMT / EMCY / SYNC / PDO / LSS / block-transfer frame
-  matches byte-for-byte (33/33). It runs offline:
+  matches byte-for-byte (36/36). It runs offline:
 
   ```bash
   python3 -m pip install canopen

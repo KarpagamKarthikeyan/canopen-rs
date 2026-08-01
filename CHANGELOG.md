@@ -6,6 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **LSS Fastscan** (CiA 305 §3.7) (`canopen-rs`, `lss`): discover an
+  unconfigured node whose address is unknown by bisecting its 128-bit identity.
+  `LssSlave` now answers Fastscan requests, and a sans-I/O `FastscanMaster`
+  driver walks the four identity values bit by bit (`encode_fastscan` /
+  `is_identify_slave_response` for the raw codec). Cross-checked against
+  python-canopen (now 36/36 frames).
+- **`Node::enable_lss_unconfigured`** (`canopen-rs`): bring a node up genuinely
+  unconfigured — it answers *only* LSS (including Fastscan discovery) and serves
+  no SDO/NMT/PDO traffic until a master assigns its node-id, at which point it
+  becomes a full node. Makes a `Node` discoverable by Fastscan end-to-end.
+- **EMCY production in `Node`** (`canopen-rs`): `Node::raise_emergency` /
+  `clear_errors` maintain the error register (object `0x1001`) and the
+  pre-defined error field (object `0x1003`, most-recent-first, bounded by
+  `MAX_ERROR_HISTORY`), mirror both into the object dictionary so a master can
+  read them over SDO, and return the EMCY frame to transmit. `error_register()`
+  / `error_history()` expose the current state.
+- **`ObjectDictionary::set`** (`canopen-rs`): a device-side value setter that
+  ignores master access rights (they govern SDO, not the application) — for
+  publishing process data into a read-only TPDO source or the error register.
+
 ## [0.5.0] - 2026-08-01
 
 ### Added

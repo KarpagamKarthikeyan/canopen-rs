@@ -29,9 +29,11 @@
 
 use heapless::Vec;
 
+use crate::datatypes::Value;
+use crate::emcy::{self, EmergencyMessage, ErrorRegister};
 use crate::lss::{self, LssAddress, LssSlave};
 use crate::nmt::{self, NmtState, NmtStateMachine};
-use crate::object_dictionary::ObjectDictionary;
+use crate::object_dictionary::{Address, ObjectDictionary};
 use crate::pdo::{self, PdoMapping, TransmissionType};
 use crate::sdo::{self, SdoServer};
 use crate::types::NodeId;
@@ -44,6 +46,10 @@ pub const MAX_PDOS: usize = 4;
 /// The maximum objects mapped into one PDO: a full eight-byte frame of
 /// one-byte objects.
 pub const MAX_PDO_MAPPING: usize = 8;
+
+/// How many past emergencies a [`Node`] keeps in its pre-defined error field
+/// (object `0x1003`), most-recent-first. Older entries are dropped once full.
+pub const MAX_ERROR_HISTORY: usize = 8;
 
 /// A frame to transmit: an 11-bit COB-ID and up to eight data bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,6 +105,8 @@ pub struct Node<const N: usize> {
     tpdos: Vec<TpdoSlot, MAX_PDOS>,
     lss: Option<LssSlave>,
     guard_toggle: bool,
+    error_register: u8,
+    error_history: Vec<u32, MAX_ERROR_HISTORY>,
 }
 
 impl<const N: usize> Node<N> {
@@ -114,6 +122,8 @@ impl<const N: usize> Node<N> {
             tpdos: Vec::new(),
             lss: None,
             guard_toggle: false,
+            error_register: 0,
+            error_history: Vec::new(),
         }
     }
 
@@ -126,6 +136,25 @@ impl<const N: usize> Node<N> {
     /// LSS; after the id is assigned, call [`Node::apply_lss_node_id`] then boot.
     pub fn enable_lss(&mut self, address: LssAddress) {
         self.lss = Some(LssSlave::new(address, self.node_id.raw()));
+    }
+
+    /// Enable LSS on a node that comes up **unconfigured** — it has no node-id
+    /// yet, so it answers *only* LSS (including [`FastscanMaster`] discovery,
+    /// when the master doesn't know its address) and serves no SDO, NMT, or PDO
+    /// traffic until a master assigns an id. Construct the node with any
+    /// placeholder id, call this, and leave it in [`NmtState::Initialising`]
+    /// (do not [`boot`](Node::boot)); once the id is assigned over LSS, call
+    /// [`Node::apply_lss_node_id`] on the node's reset, then boot.
+    ///
+    /// [`FastscanMaster`]: crate::lss::FastscanMaster
+    pub fn enable_lss_unconfigured(&mut self, address: LssAddress) {
+        self.lss = Some(LssSlave::new(address, lss::UNCONFIGURED_NODE_ID));
+    }
+
+    /// Whether LSS is enabled and the node is still unconfigured (no node-id),
+    /// so it should serve only LSS.
+    fn lss_unconfigured(&self) -> bool {
+        matches!(&self.lss, Some(l) if l.node_id() == lss::UNCONFIGURED_NODE_ID)
     }
 
     /// Change the node-id, rebuilding the SDO server for the new COB-IDs. Call
@@ -271,6 +300,85 @@ impl<const N: usize> Node<N> {
         )
     }
 
+    /// The current error register (object `0x1001`): the bitfield of active
+    /// error classes.
+    pub fn error_register(&self) -> ErrorRegister {
+        ErrorRegister(self.error_register)
+    }
+
+    /// The pre-defined error field (object `0x1003`): recorded emergency codes,
+    /// most-recent-first (up to [`MAX_ERROR_HISTORY`]). The low 16 bits of each
+    /// entry are the emergency error code.
+    pub fn error_history(&self) -> &[u32] {
+        &self.error_history
+    }
+
+    /// Raise an emergency: set `register` (and the generic bit) in the error
+    /// register, record `code` at the front of the pre-defined error field,
+    /// mirror both into the object dictionary (`0x1001` / `0x1003`) when those
+    /// objects exist, and return the EMCY frame to transmit on `0x080 + node`.
+    ///
+    /// `info` carries five manufacturer-specific bytes in the frame. The
+    /// returned frame must still be transmitted by the caller (sans-I/O).
+    pub fn raise_emergency(
+        &mut self,
+        code: u16,
+        register: ErrorRegister,
+        info: [u8; 5],
+    ) -> TxFrame {
+        // Any active error sets the generic bit (CiA 301 §7.5.2.2).
+        self.error_register |= register.0 | ErrorRegister::GENERIC;
+
+        // Record most-recent-first, dropping the oldest once full.
+        if self.error_history.is_full() {
+            self.error_history.pop();
+        }
+        let len = self.error_history.len();
+        let _ = self.error_history.push(0); // room guaranteed by the pop above
+        for i in (0..len).rev() {
+            self.error_history[i + 1] = self.error_history[i];
+        }
+        self.error_history[0] = u32::from(code);
+
+        self.mirror_error_objects();
+        let msg = EmergencyMessage::new(code, ErrorRegister(self.error_register), info);
+        TxFrame::new(emcy::emcy_cob_id(self.node_id), &msg.encode())
+    }
+
+    /// Clear all errors: reset the error register and pre-defined error field,
+    /// mirror the cleared state into the object dictionary, and return an
+    /// *error-reset* EMCY frame (code `0x0000`) to transmit.
+    pub fn clear_errors(&mut self) -> TxFrame {
+        self.error_register = 0;
+        self.error_history.clear();
+        self.mirror_error_objects();
+        TxFrame::new(
+            emcy::emcy_cob_id(self.node_id),
+            &EmergencyMessage::error_reset().encode(),
+        )
+    }
+
+    /// Mirror the error register and pre-defined error field into the object
+    /// dictionary so a master can read them over SDO. Best effort: absent (or
+    /// wrongly-typed) objects are simply skipped, so a node that does not model
+    /// `0x1001` / `0x1003` still works.
+    fn mirror_error_objects(&mut self) {
+        let _ = self.od.set(
+            Address::new(0x1001, 0),
+            Value::Unsigned8(self.error_register),
+        );
+        let count = self.error_history.len() as u8;
+        let _ = self
+            .od
+            .set(Address::new(0x1003, 0), Value::Unsigned8(count));
+        for (i, &entry) in self.error_history.iter().enumerate() {
+            let sub = (i + 1) as u8;
+            let _ = self
+                .od
+                .set(Address::new(0x1003, sub), Value::Unsigned32(entry));
+        }
+    }
+
     /// Process an incoming CAN frame, returning a response to transmit, if any.
     ///
     /// Handles NMT node-control (`0x000`), SDO requests (`0x600 + node`), LSS
@@ -278,12 +386,20 @@ impl<const N: usize> Node<N> {
     /// only in pre-operational and operational states, and PDOs only in
     /// operational, per CiA 301; LSS is served regardless of NMT state. Frames
     /// for other COB-IDs are ignored.
+    ///
+    /// While the node is LSS-unconfigured (see [`Node::enable_lss_unconfigured`])
+    /// it serves *only* LSS — everything else is ignored until a node-id is
+    /// assigned — since its data COB-IDs are not yet meaningful.
     pub fn on_frame(&mut self, cob_id: u16, data: &[u8]) -> Option<TxFrame> {
+        if cob_id == lss::LSS_MASTER_COB_ID {
+            return self.on_lss(data);
+        }
+        if self.lss_unconfigured() {
+            return None; // no node-id yet: LSS only
+        }
         if cob_id == nmt::NMT_COMMAND_COB_ID {
             self.on_nmt(data);
             None
-        } else if cob_id == lss::LSS_MASTER_COB_ID {
-            self.on_lss(data)
         } else if cob_id == self.sdo.request_cob_id() {
             self.on_sdo(data)
         } else {
@@ -764,6 +880,49 @@ mod tests {
         assert!(n.on_frame(0x620, &req).is_some()); // new COB-ID (0x600 + 0x20)
     }
 
+    #[test]
+    fn unconfigured_node_serves_only_lss() {
+        let mut n = Node::new(NodeId::new(1).unwrap(), od());
+        n.enable_lss_unconfigured(lss_address());
+        n.boot(); // even booted, an unconfigured node serves no data traffic
+
+        // The placeholder id's SDO COB-ID is not served while unconfigured.
+        let req = encode_upload_request(Address::new(0x1000, 0));
+        assert!(n.on_frame(0x601, &req).is_none());
+
+        // ...but LSS still is.
+        n.on_frame(lss::LSS_MASTER_COB_ID, &encode_switch_global(true));
+        assert_eq!(n.lss().unwrap().state(), LssState::Configuration);
+    }
+
+    #[test]
+    fn fastscan_discovers_then_configures_node_via_on_frame() {
+        use crate::lss::FastscanMaster;
+        let addr = lss_address();
+        let mut n = Node::new(NodeId::new(1).unwrap(), od());
+        n.enable_lss_unconfigured(addr);
+
+        // The master discovers the unknown address purely through on_frame.
+        let mut master = FastscanMaster::new();
+        let mut steps = 0;
+        while let Some(req) = master.next_request() {
+            let answered = n.on_frame(lss::LSS_MASTER_COB_ID, &req).is_some();
+            master.on_response(answered);
+            steps += 1;
+            assert!(steps < 200, "fastscan did not converge");
+        }
+        assert!(master.found());
+        assert_eq!(master.address(), addr);
+        assert_eq!(n.lss().unwrap().state(), LssState::Configuration);
+
+        // Assign an id; the node then serves SDO on the new COB-ID.
+        n.on_frame(lss::LSS_MASTER_COB_ID, &encode_configure_node_id(0x33));
+        assert_eq!(n.apply_lss_node_id(), Some(NodeId::new(0x33).unwrap()));
+        n.boot();
+        let req = encode_upload_request(Address::new(0x1000, 0));
+        assert!(n.on_frame(0x600 + 0x33, &req).is_some());
+    }
+
     // --- PDO configuration from the object dictionary ----------------------
     #[test]
     fn configures_pdos_from_od() {
@@ -895,5 +1054,113 @@ mod tests {
         let tpdos = n.sync_tpdos();
         assert_eq!(tpdos.len(), 1);
         assert_eq!(tpdos[0].cob_id, 0x190);
+    }
+
+    // --- Emergencies (EMCY + error register / pre-defined error field) ------
+    fn od_with_error_objects() -> ObjectDictionary<8> {
+        let mut od = ObjectDictionary::new();
+        od.insert(Address::new(0x1001, 0), Entry::ro(Value::Unsigned8(0)))
+            .unwrap();
+        od.insert(Address::new(0x1003, 0), Entry::ro(Value::Unsigned8(0)))
+            .unwrap();
+        od.insert(Address::new(0x1003, 1), Entry::ro(Value::Unsigned32(0)))
+            .unwrap();
+        od.insert(Address::new(0x1003, 2), Entry::ro(Value::Unsigned32(0)))
+            .unwrap();
+        od
+    }
+
+    #[test]
+    fn emergency_sets_register_and_emits_frame() {
+        let mut n = node();
+        let tx = n.raise_emergency(
+            emcy::error_code::VOLTAGE,
+            ErrorRegister(ErrorRegister::VOLTAGE),
+            [0xAA, 0xBB, 0xCC, 0xDD, 0xEE],
+        );
+        // The generic bit is set alongside the class bit.
+        assert_eq!(
+            n.error_register(),
+            ErrorRegister(ErrorRegister::GENERIC | ErrorRegister::VOLTAGE)
+        );
+        assert_eq!(tx.cob_id, 0x090); // 0x080 + node 0x10
+        let msg = EmergencyMessage::decode(tx.data()).unwrap();
+        assert_eq!(msg.error_code, emcy::error_code::VOLTAGE);
+        assert_eq!(
+            msg.error_register.0,
+            ErrorRegister::GENERIC | ErrorRegister::VOLTAGE
+        );
+        assert_eq!(msg.vendor_specific, [0xAA, 0xBB, 0xCC, 0xDD, 0xEE]);
+        assert_eq!(n.error_history(), &[u32::from(emcy::error_code::VOLTAGE)]);
+    }
+
+    #[test]
+    fn error_history_is_most_recent_first_and_bounded() {
+        let mut n = node();
+        let total = MAX_ERROR_HISTORY as u16 + 2;
+        for i in 0..total {
+            n.raise_emergency(0x1000 + i, ErrorRegister::NONE, [0; 5]);
+        }
+        assert_eq!(n.error_history().len(), MAX_ERROR_HISTORY);
+        assert_eq!(n.error_history()[0], u32::from(0x1000 + total - 1)); // newest first
+        let oldest_kept = 0x1000 + total - MAX_ERROR_HISTORY as u16;
+        assert_eq!(*n.error_history().last().unwrap(), u32::from(oldest_kept));
+    }
+
+    #[test]
+    fn emergency_mirrors_into_object_dictionary() {
+        let mut n = Node::new(NodeId::new(0x10).unwrap(), od_with_error_objects());
+        n.raise_emergency(0x5530, ErrorRegister(ErrorRegister::DEVICE_PROFILE), [0; 5]);
+
+        assert_eq!(
+            n.od().read(Address::new(0x1001, 0)).unwrap(),
+            Value::Unsigned8(ErrorRegister::GENERIC | ErrorRegister::DEVICE_PROFILE)
+        );
+        assert_eq!(
+            n.od().read(Address::new(0x1003, 0)).unwrap(),
+            Value::Unsigned8(1)
+        );
+        assert_eq!(
+            n.od().read(Address::new(0x1003, 1)).unwrap(),
+            Value::Unsigned32(0x5530)
+        );
+    }
+
+    #[test]
+    fn clear_errors_resets_register_history_and_od() {
+        let mut n = Node::new(NodeId::new(0x10).unwrap(), od_with_error_objects());
+        n.raise_emergency(
+            0x3210,
+            ErrorRegister(ErrorRegister::VOLTAGE),
+            [1, 2, 3, 4, 5],
+        );
+
+        let tx = n.clear_errors();
+        assert_eq!(n.error_register(), ErrorRegister::NONE);
+        assert!(n.error_history().is_empty());
+        let msg = EmergencyMessage::decode(tx.data()).unwrap();
+        assert!(msg.is_error_reset());
+        assert_eq!(tx.cob_id, 0x090);
+        assert_eq!(
+            n.od().read(Address::new(0x1001, 0)).unwrap(),
+            Value::Unsigned8(0)
+        );
+        assert_eq!(
+            n.od().read(Address::new(0x1003, 0)).unwrap(),
+            Value::Unsigned8(0)
+        );
+    }
+
+    #[test]
+    fn emergency_without_error_objects_still_works() {
+        // node()'s OD has no 0x1001/0x1003 — mirroring is best-effort and must
+        // neither panic nor suppress the frame.
+        let mut n = node();
+        let tx = n.raise_emergency(0x8130, ErrorRegister(ErrorRegister::COMMUNICATION), [0; 5]);
+        assert_eq!(tx.cob_id, 0x090);
+        assert_eq!(
+            n.error_register(),
+            ErrorRegister(ErrorRegister::GENERIC | ErrorRegister::COMMUNICATION)
+        );
     }
 }

@@ -176,6 +176,23 @@ impl<const N: usize> ObjectDictionary<N> {
         entry.value = value;
         Ok(())
     }
+
+    /// Set the value at `addr` from the **device side**, ignoring master access
+    /// rights — those govern SDO access, not the application, so this can update
+    /// a master-read-only object (e.g. publish process data into a TPDO source,
+    /// or the node's error register `0x1001`). The object must exist and the
+    /// value's type must match.
+    ///
+    /// Returns [`Error::ObjectNotFound`] if absent or [`Error::TypeMismatch`] on
+    /// a type mismatch.
+    pub fn set(&mut self, addr: Address, value: Value) -> Result<()> {
+        let entry = self.entries.get_mut(&addr).ok_or(Error::ObjectNotFound)?;
+        if entry.value.data_type() != value.data_type() {
+            return Err(Error::TypeMismatch);
+        }
+        entry.value = value;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

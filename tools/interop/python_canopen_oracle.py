@@ -211,6 +211,25 @@ check("LSS store configuration",
 check("LSS inquire node-id",
       lss_byte(pylss.CS_INQUIRE_NODE_ID), [0x5E, 0, 0, 0, 0, 0, 0, 0])
 
+# Fastscan: python-canopen hardcodes the command specifiers in fast_scan(); fall
+# back to the CiA 305 values if this version doesn't expose them by name.
+CS_FAST_SCAN = getattr(pylss, "CS_FAST_SCAN", 81)         # 0x51
+CS_IDENTIFY_SLAVE = getattr(pylss, "CS_IDENTIFY_SLAVE", 79)  # 0x4F
+
+
+def lss_fastscan(id_number, bit_check, lss_sub, lss_next):
+    return bytes([CS_FAST_SCAN]) + struct.pack("<I", id_number) \
+        + bytes([bit_check, lss_sub, lss_next])
+
+
+check("LSS fastscan init probe (bit_check=32)",
+      lss_fastscan(0, 32, 0, 0), [0x51, 0, 0, 0, 0, 32, 0, 0])
+check("LSS fastscan bit 31 of serial sub",
+      lss_fastscan(0x12345678, 31, 3, 0),
+      [0x51, 0x78, 0x56, 0x34, 0x12, 31, 3, 0])
+check("LSS fastscan identify-slave response CS",
+      [CS_IDENTIFY_SLAVE], [0x4F])
+
 
 # ---- SDO block download: command bytes (python's constants) + CRC ----
 import binascii  # noqa: E402
