@@ -13,6 +13,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `async` `send`/`recv`/`sdo_read`/`sdo_write`/`send_nmt`, built on socketcan's
   tokio integration, for use in async host applications.
 
+### Changed
+
+- **Clearer interface-open errors** (`canopen-host`): `SocketCan::open` and
+  `AsyncSocketCan::open` now wrap the raw OS error with the interface name and,
+  when the interface is missing (`ENODEV`), a hint that it may not be up
+  (`sudo ip link set up <iface>`) — instead of a bare `No such device`. The
+  `async_vcan` example opens its socket up front and fails fast with that
+  message rather than panicking inside the server task.
+
 ## [0.4.0] - 2026-07-31
 
 ### Added

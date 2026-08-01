@@ -98,6 +98,21 @@ impl From<io::Error> for SdoError {
     }
 }
 
+/// Wrap a socket-open failure with the interface name and, when the interface
+/// does not exist (`ENODEV`), a hint that it may not be up.
+pub(crate) fn open_error(interface: &str, e: io::Error) -> io::Error {
+    // ENODEV (19) is what SocketCAN returns for a missing/downed interface.
+    let hint = if e.raw_os_error() == Some(19) {
+        format!(" — interface not found; is it up? (e.g. `sudo ip link set up {interface}`)")
+    } else {
+        String::new()
+    };
+    io::Error::new(
+        e.kind(),
+        format!("opening CAN interface '{interface}': {e}{hint}"),
+    )
+}
+
 /// A CANopen transport over a Linux SocketCAN interface.
 #[derive(Debug)]
 pub struct SocketCan {
@@ -106,10 +121,13 @@ pub struct SocketCan {
 
 impl SocketCan {
     /// Open the named CAN interface (e.g. `"can0"` or `"vcan0"`).
+    ///
+    /// Fails with a message naming the interface — and hinting that it may not
+    /// be up — if it does not exist.
     pub fn open(interface: &str) -> io::Result<Self> {
-        Ok(Self {
-            socket: CanSocket::open(interface)?,
-        })
+        CanSocket::open(interface)
+            .map(|socket| Self { socket })
+            .map_err(|e| open_error(interface, e))
     }
 
     /// Set a read timeout, so [`SocketCan::recv`] (and the SDO helpers) fail

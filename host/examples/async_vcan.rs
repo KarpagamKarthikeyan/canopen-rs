@@ -20,10 +20,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     const IFACE: &str = "vcan0";
     let node_id = NodeId::new(0x10)?;
 
+    // Open the master's socket first: a downed or missing interface fails fast
+    // here with a clear message, rather than as a panic buried in the server
+    // task (which would surface only as a baffling channel `RecvError`).
+    let bus = AsyncSocketCan::open(IFACE)?;
+
     // --- Server task: serve an object dictionary on vcan0. ---
-    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
+    // The ready channel carries the server's open result so a failure there is
+    // reported cleanly instead of panicking the task.
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let server = tokio::spawn(async move {
-        let bus = AsyncSocketCan::open(IFACE).expect("open vcan0");
+        let bus = match AsyncSocketCan::open(IFACE) {
+            Ok(bus) => bus,
+            Err(e) => {
+                let _ = ready_tx.send(Err(e.to_string()));
+                return;
+            }
+        };
         let mut od = ObjectDictionary::<8>::new();
         od.insert(
             Address::new(0x1000, 0),
@@ -36,18 +49,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
         let mut node = Node::new(node_id, od);
         node.boot();
-        let _ = ready_tx.send(()); // socket is open and listening
-        loop {
-            let frame = bus.recv().await.expect("recv");
+        let _ = ready_tx.send(Ok(())); // socket is open and listening
+        while let Ok(frame) = bus.recv().await {
             if let Some(tx) = node.on_frame(frame.cob_id, frame.data()) {
-                bus.send(tx.cob_id, tx.data()).await.expect("send");
+                if bus.send(tx.cob_id, tx.data()).await.is_err() {
+                    break;
+                }
             }
         }
     });
-    ready_rx.await?; // wait until the server is listening
+    match ready_rx.await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => return Err(format!("server failed to start: {e}").into()),
+        Err(_) => return Err("server task exited before signalling ready".into()),
+    }
 
-    // --- Client: async SDO read/write. ---
-    let bus = AsyncSocketCan::open(IFACE)?;
+    // --- Client: async SDO read/write (reusing the socket opened above). ---
 
     let device_type = bus
         .sdo_read(node_id, Address::new(0x1000, 0), DataType::Unsigned32)

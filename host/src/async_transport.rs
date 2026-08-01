@@ -42,7 +42,7 @@ use canopen_rs::transport::{cob_id, frame_from};
 use canopen_rs::types::NodeId;
 use canopen_rs::NmtCommand;
 
-use crate::transport::{Received, SdoError};
+use crate::transport::{open_error, Received, SdoError};
 
 /// An async CANopen transport over a Linux SocketCAN interface.
 #[derive(Debug)]
@@ -52,10 +52,13 @@ pub struct AsyncSocketCan {
 
 impl AsyncSocketCan {
     /// Open the named CAN interface (e.g. `"can0"` or `"vcan0"`).
+    ///
+    /// Fails with a message naming the interface — and hinting that it may not
+    /// be up — if it does not exist.
     pub fn open(interface: &str) -> io::Result<Self> {
-        Ok(Self {
-            socket: CanSocket::open(interface)?,
-        })
+        CanSocket::open(interface)
+            .map(|socket| Self { socket })
+            .map_err(|e| open_error(interface, e))
     }
 
     /// Transmit `data` on COB-ID `cob_id` as a standard data frame.
