@@ -27,3 +27,7 @@ pub mod nmt;
 /// Linux SocketCAN transport (compiled only on `target_os = "linux"`).
 #[cfg(target_os = "linux")]
 pub mod transport;
+
+/// Async (tokio) SocketCAN transport (Linux, `tokio` feature).
+#[cfg(all(target_os = "linux", feature = "tokio"))]
+pub mod async_transport;

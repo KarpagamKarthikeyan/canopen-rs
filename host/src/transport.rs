@@ -42,6 +42,14 @@ pub struct Received {
 }
 
 impl Received {
+    /// Build a received frame from a COB-ID and its data bytes (clamped to 8).
+    pub(crate) fn new(cob_id: u16, bytes: &[u8]) -> Self {
+        let len = bytes.len().min(8);
+        let mut data = [0u8; 8];
+        data[..len].copy_from_slice(&bytes[..len]);
+        Self { cob_id, data, len }
+    }
+
     /// The received bytes, trimmed to the frame's data length.
     pub fn data(&self) -> &[u8] {
         &self.data[..self.len]
@@ -135,14 +143,7 @@ impl SocketCan {
                 continue;
             }
             let Some(cob) = cob_id(&frame) else { continue };
-            let bytes = frame.data();
-            let mut data = [0u8; 8];
-            data[..bytes.len()].copy_from_slice(bytes);
-            return Ok(Received {
-                cob_id: cob,
-                data,
-                len: bytes.len(),
-            });
+            return Ok(Received::new(cob, frame.data()));
         }
     }
 

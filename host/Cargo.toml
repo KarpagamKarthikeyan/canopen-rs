@@ -15,8 +15,21 @@ readme = "../README.md"
 [dependencies]
 canopen-rs = { workspace = true, features = ["std"] }
 
+[features]
+# Async SocketCAN transport built on socketcan's tokio integration. Requires a
+# tokio runtime in the consuming application; Linux only, like the transport.
+tokio = ["socketcan/tokio"]
+
 # SocketCAN is a Linux-only kernel interface; only pull it in on Linux so the
 # rest of the host crate (e.g. EDS parsing) still builds on macOS/Windows.
 [target.'cfg(target_os = "linux")'.dependencies]
 socketcan.workspace = true
 embedded-can.workspace = true
+
+# A tokio runtime for the async example (Linux; requires the `tokio` feature).
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+
+[[example]]
+name = "async_vcan"
+required-features = ["tokio"]

@@ -168,8 +168,10 @@ cargo clippy --workspace --all-targets
   produce frames but never touch a bus, so the same logic runs on host and MCU.
   CAN frames flow through the [`embedded-can`] traits.
 - **`host` (`canopen-host`)** — `std` layer on the core: a Linux SocketCAN
-  transport with one-call `sdo_read` / `sdo_write`, and EDS/DCF parsing.
-  SocketCAN is gated to Linux; EDS parsing builds everywhere.
+  transport with one-call `sdo_read` / `sdo_write` (blocking, plus an `async`
+  tokio variant behind the `tokio` feature), and EDS/DCF parsing (with a
+  `build.rs` object-dictionary codegen). SocketCAN is gated to Linux; EDS
+  parsing and codegen build everywhere.
 
 ```
 canopen-rs/

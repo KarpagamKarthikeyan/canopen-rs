@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Async SocketCAN transport** (`canopen-host`, `async_transport`, behind the
+  `tokio` feature): `AsyncSocketCan` mirrors the blocking `SocketCan` with
+  `async` `send`/`recv`/`sdo_read`/`sdo_write`/`send_nmt`, built on socketcan's
+  tokio integration, for use in async host applications.
+
 ## [0.4.0] - 2026-07-31
 
 ### Added
