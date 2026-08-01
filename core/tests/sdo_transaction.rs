@@ -5,7 +5,7 @@
 
 use canopen_rs::object_dictionary::Entry;
 use canopen_rs::sdo::{SdoClient, SdoEvent, SdoServer};
-use canopen_rs::{Address, DataType, NodeId, ObjectDictionary, Value};
+use canopen_rs::{Address, ByteString, DataType, NodeId, ObjectDictionary, Value};
 
 const NODE: u8 = 0x10;
 
@@ -23,6 +23,18 @@ fn make_od() -> ObjectDictionary<8> {
     // 0x2000: an 8-byte value, read/write → forces segmented transfer.
     od.insert(Address::new(0x2000, 0), Entry::rw(Value::Unsigned64(0)))
         .unwrap();
+    // 0x2001: a short (<=4 byte) VISIBLE_STRING → expedited.
+    od.insert(
+        Address::new(0x2001, 0),
+        Entry::rw(Value::VisibleString(ByteString::new())),
+    )
+    .unwrap();
+    // 0x1008: device name, a longer VISIBLE_STRING → segmented.
+    od.insert(
+        Address::new(0x1008, 0),
+        Entry::rw(Value::VisibleString(ByteString::new())),
+    )
+    .unwrap();
     od
 }
 
@@ -149,6 +161,54 @@ fn segmented_write_then_read_back() {
         DataType::Unsigned64,
     );
     assert_eq!(v, Ok(big));
+}
+
+#[test]
+fn expedited_string_write_then_read_back() {
+    // A short (<= 4 byte) VISIBLE_STRING travels expedited.
+    let (mut c, mut s) = peers();
+    let mut od = make_od();
+    let name = Value::VisibleString(ByteString::from_str("HB").unwrap());
+    assert_eq!(
+        write(&mut c, &mut s, &mut od, Address::new(0x2001, 0), name),
+        Ok(())
+    );
+    let v = read(
+        &mut c,
+        &mut s,
+        &mut od,
+        Address::new(0x2001, 0),
+        DataType::VisibleString,
+    );
+    assert_eq!(v, Ok(name));
+}
+
+#[test]
+fn segmented_string_write_then_read_back() {
+    // A longer VISIBLE_STRING (> 8 bytes) is written and read back across many
+    // segmented frames — the transfer the numeric-only buffers could not carry.
+    let (mut c, mut s) = peers();
+    let mut od = make_od();
+    let text = "canopen-rs device"; // 17 bytes
+    let name = Value::VisibleString(ByteString::from_str(text).unwrap());
+    assert_eq!(
+        write(&mut c, &mut s, &mut od, Address::new(0x1008, 0), name),
+        Ok(())
+    );
+    assert_eq!(od.read(Address::new(0x1008, 0)).unwrap(), name);
+
+    let v = read(
+        &mut c,
+        &mut s,
+        &mut od,
+        Address::new(0x1008, 0),
+        DataType::VisibleString,
+    );
+    assert_eq!(v, Ok(name));
+    match v {
+        Ok(Value::VisibleString(bs)) => assert_eq!(bs.as_str(), Some(text)),
+        other => panic!("expected the device name string, got {other:?}"),
+    }
 }
 
 #[test]

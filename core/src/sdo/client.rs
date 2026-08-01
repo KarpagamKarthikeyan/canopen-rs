@@ -34,7 +34,7 @@ use super::{
     encode_upload_request, encode_upload_segment_request, request_cob_id, response_cob_id,
     SdoPayload, SEGMENT_DATA_MAX,
 };
-use crate::datatypes::{DataType, Value};
+use crate::datatypes::{DataType, Value, MAX_STRING_LEN};
 use crate::object_dictionary::Address;
 use crate::types::NodeId;
 
@@ -62,12 +62,12 @@ enum State {
     DownloadExpedited,
     /// Awaiting the segmented-download initiate response, then sending segments.
     DownloadInit {
-        data: [u8; 8],
+        data: [u8; MAX_STRING_LEN],
         len: usize,
     },
     /// Awaiting the acknowledgement of the last-sent segment.
     DownloadSeg {
-        data: [u8; 8],
+        data: [u8; MAX_STRING_LEN],
         len: usize,
         pos: usize,
         last_toggle: bool,
@@ -79,7 +79,7 @@ enum State {
     /// Awaiting the next upload data segment; `toggle` is the polled toggle.
     UploadSeg {
         data_type: DataType,
-        buf: Vec<u8, 8>,
+        buf: Vec<u8, MAX_STRING_LEN>,
         toggle: bool,
     },
 }
@@ -130,8 +130,10 @@ impl SdoClient {
             self.state = State::DownloadExpedited;
             encode_download_expedited(addr, &value).expect("size <= 4")
         } else {
-            let mut data = [0u8; 8];
-            value.encode_le(&mut data[..size]).expect("size <= 8");
+            let mut data = [0u8; MAX_STRING_LEN];
+            value
+                .encode_le(&mut data[..size])
+                .expect("size <= MAX_STRING_LEN");
             self.state = State::DownloadInit { data, len: size };
             encode_download_initiate_segmented(addr, size as u32)
         }
@@ -170,7 +172,12 @@ impl SdoClient {
         }
     }
 
-    fn on_download_init(&mut self, resp: &SdoPayload, data: [u8; 8], len: usize) -> SdoEvent {
+    fn on_download_init(
+        &mut self,
+        resp: &SdoPayload,
+        data: [u8; MAX_STRING_LEN],
+        len: usize,
+    ) -> SdoEvent {
         // The initiate response for a segmented download is the same frame as
         // an expedited download response.
         if decode_download_response(resp).is_err() {
@@ -182,7 +189,7 @@ impl SdoClient {
     fn on_download_seg(
         &mut self,
         resp: &SdoPayload,
-        data: [u8; 8],
+        data: [u8; MAX_STRING_LEN],
         len: usize,
         pos: usize,
         last_toggle: bool,
@@ -204,7 +211,7 @@ impl SdoClient {
     /// park in [`State::DownloadSeg`] awaiting its acknowledgement.
     fn send_download_segment(
         &mut self,
-        data: [u8; 8],
+        data: [u8; MAX_STRING_LEN],
         len: usize,
         pos: usize,
         toggle: bool,
@@ -242,7 +249,7 @@ impl SdoClient {
         &mut self,
         resp: &SdoPayload,
         data_type: DataType,
-        mut buf: Vec<u8, 8>,
+        mut buf: Vec<u8, MAX_STRING_LEN>,
         toggle: bool,
     ) -> SdoEvent {
         let seg = match decode_data_segment(resp) {

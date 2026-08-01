@@ -30,7 +30,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use canopen_rs::datatypes::{DataType, Value};
+use canopen_rs::datatypes::{ByteString, DataType, Value, MAX_STRING_LEN};
 use canopen_rs::object_dictionary::{AccessType, Address, Entry, ObjectDictionary};
 
 /// An error encountered while parsing an EDS/DCF file.
@@ -307,6 +307,19 @@ fn eval_int_expr(s: &str, node_id: u8) -> Option<i128> {
 /// Parse a default/configured value string into a typed [`Value`].
 fn value_from_str(data_type: DataType, s: &str, node_id: u8) -> Option<Value> {
     let s = s.trim();
+    // Variable-length types take the literal as their content (VISIBLE_STRING
+    // is text; OCTET_STRING / DOMAIN keep the raw bytes), truncated to the
+    // buffer capacity.
+    if data_type.is_variable() {
+        let bytes = s.as_bytes();
+        let end = bytes.len().min(MAX_STRING_LEN);
+        let bs = ByteString::from_bytes(&bytes[..end]).ok()?;
+        return Some(match data_type {
+            DataType::OctetString => Value::OctetString(bs),
+            DataType::Domain => Value::Domain(bs),
+            _ => Value::VisibleString(bs),
+        });
+    }
     // Floating-point types parse the literal directly.
     match data_type {
         DataType::Real32 => {
@@ -473,9 +486,14 @@ DefaultValue=1.5
     }
 
     #[test]
-    fn skips_unmodelled_string_object() {
-        // 0x1008 Device name is VISIBLE_STRING (0x09) — not represented yet.
-        assert!(sample().get(Address::new(0x1008, 0)).is_none());
+    fn parses_visible_string_object() {
+        // 0x1008 Device name is VISIBLE_STRING (0x09), default "Widget".
+        let obj = sample().get(Address::new(0x1008, 0)).unwrap().clone();
+        assert_eq!(obj.data_type, DataType::VisibleString);
+        match obj.default_value {
+            Value::VisibleString(bs) => assert_eq!(bs.as_str(), Some("Widget")),
+            other => panic!("expected VISIBLE_STRING, got {other:?}"),
+        }
     }
 
     #[test]

@@ -128,7 +128,7 @@ pub enum SdoAbortCode {
 /// which require segmented transfer.
 pub fn encode_download_expedited(addr: Address, value: &Value) -> Result<SdoPayload> {
     let len = value.size();
-    if len == 0 || len > 4 {
+    if len > 4 {
         return Err(Error::UnsupportedTransfer);
     }
     let mut p = [0u8; 8];
@@ -172,7 +172,7 @@ pub fn encode_upload_request(addr: Address) -> SdoPayload {
 /// Returns [`Error::UnsupportedTransfer`] for values larger than four bytes.
 pub fn encode_upload_expedited_response(addr: Address, value: &Value) -> Result<SdoPayload> {
     let len = value.size();
-    if len == 0 || len > 4 {
+    if len > 4 {
         return Err(Error::UnsupportedTransfer);
     }
     let mut p = [0u8; 8];
@@ -201,8 +201,12 @@ pub fn decode_upload_expedited_response(
     }
     let n = (cmd >> 2) & 0x03;
     let len = 4 - n as usize;
-    if len != data_type.size() {
-        return Err(Error::TypeMismatch);
+    // A fixed-size type must match exactly; a variable-length one accepts the
+    // server's indicated length as the (short) string content.
+    if let Some(fixed) = data_type.fixed_size() {
+        if len != fixed {
+            return Err(Error::TypeMismatch);
+        }
     }
     let addr = Address::new(u16::from_le_bytes([p[1], p[2]]), p[3]);
     let value = Value::decode_le(data_type, &p[4..4 + len])?;

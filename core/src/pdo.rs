@@ -257,7 +257,8 @@ pub fn pack<const N: usize, const K: usize>(
     for entry in mapping.entries() {
         let width = byte_width(entry.bit_length)?;
         let value = od.read(entry.address)?;
-        if value.size() != width {
+        // Variable-length types (strings/DOMAIN) cannot be mapped into a PDO.
+        if value.data_type().is_variable() || value.size() != width {
             return Err(Error::TypeMismatch);
         }
         value.encode_le(&mut buf[offset..offset + width])?;

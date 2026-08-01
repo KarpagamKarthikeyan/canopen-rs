@@ -36,6 +36,7 @@ use crate::nmt::{self, NmtState, NmtStateMachine};
 use crate::object_dictionary::{Address, ObjectDictionary};
 use crate::pdo::{self, PdoMapping, TransmissionType};
 use crate::sdo::{self, SdoServer};
+use crate::sync::{self, SyncCounter};
 use crate::types::NodeId;
 use crate::{Error, Result};
 
@@ -107,6 +108,7 @@ pub struct Node<const N: usize> {
     guard_toggle: bool,
     error_register: u8,
     error_history: Vec<u32, MAX_ERROR_HISTORY>,
+    sync_producer: Option<SyncCounter>,
 }
 
 impl<const N: usize> Node<N> {
@@ -124,6 +126,7 @@ impl<const N: usize> Node<N> {
             guard_toggle: false,
             error_register: 0,
             error_history: Vec::new(),
+            sync_producer: None,
         }
     }
 
@@ -377,6 +380,33 @@ impl<const N: usize> Node<N> {
                 .od
                 .set(Address::new(0x1003, sub), Value::Unsigned32(entry));
         }
+    }
+
+    /// Configure this node as the network **SYNC producer**, with the given
+    /// synchronous-counter-overflow value (object `0x1019`): `0` produces
+    /// counter-less (empty) SYNC frames, and `2..=240` a counting SYNC.
+    ///
+    /// Returns [`Error::InvalidSyncCounter`] for the reserved value `1` or any
+    /// value above `240`.
+    pub fn enable_sync_producer(&mut self, counter_overflow: u8) -> Result<()> {
+        self.sync_producer = Some(SyncCounter::new(counter_overflow)?);
+        Ok(())
+    }
+
+    /// Produce the next SYNC frame to broadcast on [`SYNC_COB_ID`](crate::sync::SYNC_COB_ID),
+    /// advancing the counter when one is configured. Returns `None` unless the
+    /// node is a SYNC producer (see [`enable_sync_producer`](Node::enable_sync_producer)).
+    ///
+    /// Call this on your SYNC-period timer. SYNC is a broadcast network service,
+    /// so it is emitted independently of this node's own NMT state; gate the
+    /// call on the network state yourself if you only want SYNC while
+    /// operational.
+    pub fn produce_sync(&mut self) -> Option<TxFrame> {
+        let counter = self.sync_producer.as_mut()?;
+        Some(match counter.advance() {
+            Some(count) => TxFrame::new(sync::SYNC_COB_ID, &sync::encode_counter(count)),
+            None => TxFrame::new(sync::SYNC_COB_ID, &[]),
+        })
     }
 
     /// Process an incoming CAN frame, returning a response to transmit, if any.
@@ -1162,5 +1192,40 @@ mod tests {
             n.error_register(),
             ErrorRegister(ErrorRegister::GENERIC | ErrorRegister::COMMUNICATION)
         );
+    }
+
+    // --- SYNC producer -----------------------------------------------------
+    #[test]
+    fn sync_production_is_off_by_default() {
+        let mut n = node();
+        assert!(n.produce_sync().is_none());
+    }
+
+    #[test]
+    fn counterless_sync_producer_emits_empty_frames() {
+        let mut n = node();
+        n.enable_sync_producer(0).unwrap();
+        let tx = n.produce_sync().expect("a SYNC frame");
+        assert_eq!(tx.cob_id, sync::SYNC_COB_ID); // 0x080
+        assert_eq!(tx.data(), &[] as &[u8]); // counter-less
+    }
+
+    #[test]
+    fn counting_sync_producer_cycles_and_wraps() {
+        let mut n = node();
+        n.enable_sync_producer(3).unwrap();
+        let counts: [&[u8]; 4] = [&[1], &[2], &[3], &[1]];
+        for expected in counts {
+            let tx = n.produce_sync().unwrap();
+            assert_eq!(tx.cob_id, sync::SYNC_COB_ID);
+            assert_eq!(tx.data(), expected);
+        }
+    }
+
+    #[test]
+    fn enable_sync_producer_rejects_reserved_overflow() {
+        let mut n = node();
+        assert_eq!(n.enable_sync_producer(1), Err(Error::InvalidSyncCounter));
+        assert!(n.produce_sync().is_none()); // still not a producer
     }
 }

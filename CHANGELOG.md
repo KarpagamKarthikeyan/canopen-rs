@@ -6,7 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-01
+
 ### Added
+
+- **String and `DOMAIN` value types** (`canopen-rs`, `datatypes`): `VISIBLE_STRING`,
+  `OCTET_STRING`, and `DOMAIN`, carried by a bounded `Copy` `ByteString` (up to
+  `MAX_STRING_LEN` bytes). The SDO server and client transfer them — expedited
+  when ≤ 4 bytes, segmented otherwise — and the EDS parser reads string default
+  values. `StandardObjects::with_device_name` sets the device name (`0x1008`).
+  This unblocks the string communication objects (device name, versions).
 
 - **LSS Fastscan** (CiA 305 §3.7) (`canopen-rs`, `lss`): discover an
   unconfigured node whose address is unknown by bisecting its 128-bit identity.
@@ -27,6 +36,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`ObjectDictionary::set`** (`canopen-rs`): a device-side value setter that
   ignores master access rights (they govern SDO, not the application) — for
   publishing process data into a read-only TPDO source or the error register.
+- **SYNC production in `Node`** (`canopen-rs`): `Node::enable_sync_producer`
+  (object `0x1019` counter-overflow) and `Node::produce_sync` make a node the
+  network SYNC master — emitting counter-less or counting SYNC frames on
+  `0x080` — complementing the existing SYNC-triggered TPDO consumption.
+- **`StandardObjects` builder** (`canopen-rs`, `standard`): populate an object
+  dictionary with the mandatory CiA 301 communication-profile objects (device
+  type `0x1000`, error register `0x1001`, heartbeat time `0x1017`, identity
+  record `0x1018`, and an optional pre-defined error field `0x1003`) in one
+  call. The identity is the same `LssAddress` an LSS master matches, and the
+  error objects are exactly the ones `Node::raise_emergency` mirrors into — so a
+  node built this way is ready for LSS/Fastscan and EMCY out of the box.
 
 ## [0.5.0] - 2026-08-01
 
@@ -160,6 +180,7 @@ both host (Linux/SocketCAN) and bare-metal MCU.
 - Wire format cross-checked byte-for-byte against `python-canopen`; CI with a
   virtual-CAN on-bus loopback.
 
+[0.6.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.6.0
 [0.5.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.5.0
 [0.4.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.4.0
 [0.3.1]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.3.1

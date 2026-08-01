@@ -291,10 +291,14 @@ the conversion:
 - `Value::encode_le(&mut buf) -> Result<usize>` writes little-endian, returns
   the byte count, errors `BadLength` on a short buffer.
 - `Value::decode_le(DataType, &bytes) -> Result<Value>` requires `bytes.len()`
-  to equal `DataType::size()` exactly.
-- Both `enum`s are `#[non_exhaustive]`. `VISIBLE_STRING`, `OCTET_STRING`, and
-  `DOMAIN` are **not yet modelled** (`DataType::from_index` returns `None` for
-  them), which is why the EDS parser skips string/domain objects.
+  to equal `DataType::fixed_size()` for a fixed type, or be within
+  `MAX_STRING_LEN` for a variable-length one.
+- Both `enum`s are `#[non_exhaustive]`. Alongside the numeric types,
+  `VISIBLE_STRING`, `OCTET_STRING`, and `DOMAIN` are modelled by a bounded,
+  `Copy` `ByteString` (up to `MAX_STRING_LEN` bytes). `DataType::fixed_size()`
+  returns `None` for these variable-length types; the SDO server/client size
+  their segmented-transfer buffers to `MAX_STRING_LEN`, and the EDS parser reads
+  string default values.
 
 ### Building an OD from an EDS
 
@@ -304,6 +308,17 @@ the conversion:
 (`host/src/codegen.rs`) instead emits **Rust source** for a
 `pub fn …() -> canopen_rs::ObjectDictionary<N>` — a `build.rs` turns a device
 file into a compile-time, zero-runtime-parse OD. See [§9](#9-host-transports).
+
+### The mandatory-object baseline
+
+`canopen_rs::standard::StandardObjects` (`core/src/standard.rs`) inserts the
+mandatory CiA 301 communication-profile objects — device type (`0x1000`), error
+register (`0x1001`), heartbeat time (`0x1017`), identity record (`0x1018`), and
+an optional pre-defined error field (`0x1003`) — in one builder call. The
+identity is the same `LssAddress` LSS matches (§8) and the error objects are the
+ones `Node::raise_emergency` mirrors into (§6), so it is the common seam between
+those subsystems. All the objects it writes are node-id-independent, so it can
+populate an LSS-unconfigured node before an id is assigned.
 
 ---
 
@@ -777,6 +792,7 @@ flowchart LR
 | The whole device runtime and frame dispatch | `core/src/node.rs` (`Node::on_frame`) |
 | The output frame type and sans-I/O contract | `core/src/node.rs` (`TxFrame`) |
 | The data model and access control | `core/src/object_dictionary.rs` |
+| The mandatory-object baseline builder | `core/src/standard.rs` |
 | Value encoding / the type system | `core/src/datatypes.rs` |
 | SDO wire format and abort codes | `core/src/sdo/mod.rs` |
 | Driving/serving an SDO transaction | `core/src/sdo/client.rs`, `core/src/sdo/server.rs` |
@@ -791,10 +807,3 @@ flowchart LR
 | The CLI | `cli/src/main.rs` |
 | End-to-end on a real bus | `host/examples/vcan_loopback.rs`, `host/examples/async_vcan.rs` |
 | Wire-format cross-check | `tools/interop/python_canopen_oracle.py` |
-
-### A note on the `reference/` directory
-
-`reference/zencan/` is a **vendored copy of the `zencan` project** studied as
-prior art (as the README's "References studied (not copied)" section states). It
-is **not** part of the `canopen-rs` build — the workspace members are only
-`core`, `host`, and `cli`. Ignore it when reading or contributing to this stack.

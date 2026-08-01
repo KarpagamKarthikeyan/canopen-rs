@@ -17,22 +17,22 @@ use super::{
     SdoPayload, CCS_DOWNLOAD_INITIATE, CCS_DOWNLOAD_SEGMENT, CCS_UPLOAD_INITIATE,
     CCS_UPLOAD_SEGMENT, CS_ABORT, CS_MASK, EXPEDITED, SEGMENT_DATA_MAX, SIZE_INDICATED, TOGGLE,
 };
-use crate::datatypes::{DataType, Value};
+use crate::datatypes::{DataType, Value, MAX_STRING_LEN};
 use crate::object_dictionary::{Address, ObjectDictionary};
 use crate::types::NodeId;
 use crate::Error;
 
 /// An in-progress segmented transfer held between frames.
 ///
-/// All CANopen numeric values are at most eight bytes, so the buffers are
-/// fixed at eight; variable-length (string/`DOMAIN`) transfers will need a
-/// larger buffer when those types are modelled.
+/// The buffers are sized to [`MAX_STRING_LEN`], the largest value the server
+/// transfers — eight bytes covers every numeric type, and the rest is headroom
+/// for the variable-length (`VISIBLE_STRING` / `OCTET_STRING` / `DOMAIN`) types.
 #[derive(Debug)]
 enum Transfer {
     /// The client is reading a value larger than four bytes from us.
     Upload {
         addr: Address,
-        data: [u8; 8],
+        data: [u8; MAX_STRING_LEN],
         len: usize,
         pos: usize,
         toggle: bool,
@@ -41,7 +41,7 @@ enum Transfer {
     Download {
         addr: Address,
         data_type: DataType,
-        buf: Vec<u8, 8>,
+        buf: Vec<u8, MAX_STRING_LEN>,
         declared: usize,
         toggle: bool,
     },
@@ -126,14 +126,18 @@ impl SdoServer {
         }
 
         if req[0] & EXPEDITED != 0 {
-            // Expedited write: 1..=4 data bytes inline.
+            // Expedited write: 0..=4 data bytes inline.
             let len = if req[0] & SIZE_INDICATED != 0 {
                 4 - ((req[0] >> 2) & 0x03) as usize
             } else {
-                data_type.size()
+                data_type.fixed_size().unwrap_or(0)
             };
-            if len != data_type.size() {
-                return abort(addr, SdoAbortCode::DataTypeMismatchLengthHigh);
+            // A fixed-size type must match exactly; a variable-length one takes
+            // the indicated length as its (short) content.
+            if let Some(fixed) = data_type.fixed_size() {
+                if len != fixed {
+                    return abort(addr, SdoAbortCode::DataTypeMismatchLengthHigh);
+                }
             }
             let value = match Value::decode_le(data_type, &req[4..4 + len]) {
                 Ok(v) => v,
@@ -146,7 +150,13 @@ impl SdoServer {
                 Ok(x) => x,
                 Err(_) => return abort(addr, SdoAbortCode::CommandInvalid),
             };
-            if size as usize != data_type.size() {
+            // A fixed-size type must match; a variable-length one must fit the
+            // buffer.
+            let ok = match data_type.fixed_size() {
+                Some(fixed) => size as usize == fixed,
+                None => size as usize <= MAX_STRING_LEN,
+            };
+            if !ok {
                 return abort(addr, SdoAbortCode::DataTypeMismatchLengthHigh);
             }
             self.transfer = Some(Transfer::Download {
@@ -176,8 +186,10 @@ impl SdoServer {
         if size <= 4 {
             Some(encode_upload_expedited_response(addr, &value).expect("size <= 4"))
         } else {
-            let mut data = [0u8; 8];
-            value.encode_le(&mut data[..size]).expect("size <= 8");
+            let mut data = [0u8; MAX_STRING_LEN];
+            value
+                .encode_le(&mut data[..size])
+                .expect("size <= MAX_STRING_LEN");
             self.transfer = Some(Transfer::Upload {
                 addr,
                 data,

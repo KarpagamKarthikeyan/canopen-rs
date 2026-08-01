@@ -27,19 +27,19 @@ top.
 | Area | Status |
 |------|--------|
 | Object dictionary (typed entries, access control) | ✅ |
-| Data types + little-endian value codec | ✅ |
-| SDO — expedited **and** segmented transfer | ✅ |
+| Data types (numeric + `VISIBLE_STRING`/`OCTET_STRING`/`DOMAIN`) + LE codec | ✅ |
+| SDO — expedited **and** segmented transfer (incl. strings) | ✅ |
 | SDO **server** (services the OD) and **client** (drives transactions) | ✅ |
 | NMT state machine, node-control, heartbeat + node guarding | ✅ |
 | PDO mapping, TPDO pack / RPDO unpack, connection-set COB-IDs | ✅ |
 | SYNC, EMCY (emergency + error register), and TIME | ✅ |
-| `Node` runtime (OD + SDO + NMT + PDO + EMCY / error register) | ✅ |
+| `Node` runtime (OD + SDO + NMT + PDO + EMCY + SYNC production) | ✅ |
 | LSS (node-id assignment, selective switch, **Fastscan** discovery) | ✅ |
 | SDO block transfer (download + upload, CRC-16) | ✅ |
 | `embedded-can` bridge + Linux SocketCAN transport (blocking + `async`/tokio) | ✅ |
 | EDS / DCF file parsing → object dictionary | ✅ |
 | Host NMT master: `send_nmt` + heartbeat monitor | ✅ |
-| String / `DOMAIN` value types | planned |
+| SDO block transfer wired into the `Node`; sub-byte PDO packing | planned |
 
 Everything in the core is `#![no_std]`, `#![deny(unsafe_code)]`, and builds for
 `thumbv7em-none-eabihf`; SDO frame codecs are validated against known-good byte
@@ -94,11 +94,18 @@ if let Some(tx) = node.on_frame(cob_id, &data) {
 }
 ```
 
+For the mandatory CiA 301 objects (device type, error register, heartbeat time,
+and the `0x1018` identity), `StandardObjects::new(device_type, identity).insert_into(&mut od)?`
+builds the conformant baseline in one call — the identity is the same
+`LssAddress` LSS matches, and the error objects are the ones EMCY mirrors into.
+
 `Node` bundles the object dictionary, SDO server, and NMT state: `on_frame`
 serves SDO requests (expedited or segmented, with standard abort codes),
 advances NMT from node-control commands, and applies received PDOs. Add PDOs
 with `node.add_rpdo`/`add_tpdo`, and get SYNC-triggered transmit frames from
-`node.sync_tpdos()`. It's sans-I/O — the same code runs on a host or an MCU.
+`node.sync_tpdos()`. Signal faults with `node.raise_emergency(..)` (it maintains
+the error register/history and returns the EMCY frame). It's sans-I/O — the same
+code runs on a host or an MCU.
 
 ### Talk to a device (a master), over SocketCAN
 
