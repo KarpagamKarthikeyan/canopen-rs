@@ -63,6 +63,7 @@ pub mod object_dictionary;
 pub mod pdo;
 pub mod sdo;
 pub mod sync;
+pub mod time;
 pub mod transport;
 pub mod types;
 
@@ -75,4 +76,5 @@ pub use object_dictionary::{AccessType, Address, Entry, ObjectDictionary};
 pub use pdo::{MappingEntry, PdoKind, PdoMapping, TransmissionType};
 pub use sdo::{SdoClient, SdoEvent, SdoServer, Segment, SegmentReader, SegmentWriter};
 pub use sync::SyncCounter;
+pub use time::TimeOfDay;
 pub use types::{Error, NodeId, Result};

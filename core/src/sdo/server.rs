@@ -53,6 +53,7 @@ enum Transfer {
 pub struct SdoServer {
     node: NodeId,
     transfer: Option<Transfer>,
+    last_write: Option<Address>,
 }
 
 impl SdoServer {
@@ -61,6 +62,7 @@ impl SdoServer {
         Self {
             node,
             transfer: None,
+            last_write: None,
         }
     }
 
@@ -77,6 +79,14 @@ impl SdoServer {
     /// Whether a segmented transfer is currently in progress.
     pub fn is_busy(&self) -> bool {
         self.transfer.is_some()
+    }
+
+    /// Take the address of the object most recently written by a completed SDO
+    /// download, clearing it. Poll after [`SdoServer::handle`] to react to a
+    /// master's writes (e.g. re-read configuration). `None` if nothing was
+    /// written since the last call.
+    pub fn take_write(&mut self) -> Option<Address> {
+        self.last_write.take()
     }
 
     /// Handle an SDO request against `od`, returning the response to transmit.
@@ -129,7 +139,7 @@ impl SdoServer {
                 Ok(v) => v,
                 Err(_) => return abort(addr, SdoAbortCode::General),
             };
-            write_value(od, addr, value)
+            write_value(od, addr, value, &mut self.last_write)
         } else {
             // Segmented write: declare the size now, receive segments later.
             let (_, size) = match decode_download_initiate_segmented(req) {
@@ -246,7 +256,10 @@ impl SdoServer {
                     // The final segment is acknowledged with a segment
                     // response, not a download-initiate response.
                     match od.write(addr, value) {
-                        Ok(()) => Some(ack),
+                        Ok(()) => {
+                            self.last_write = Some(addr);
+                            Some(ack)
+                        }
                         Err(Error::ReadOnly) => abort(addr, SdoAbortCode::WriteOfReadOnly),
                         Err(_) => abort(addr, SdoAbortCode::General),
                     }
@@ -266,14 +279,19 @@ impl SdoServer {
     }
 }
 
-/// Write `value` to `od`, mapping OD errors to SDO abort responses.
+/// Write `value` to `od`, recording the address on success and mapping OD
+/// errors to SDO abort responses.
 fn write_value<const N: usize>(
     od: &mut ObjectDictionary<N>,
     addr: Address,
     value: Value,
+    last_write: &mut Option<Address>,
 ) -> Option<SdoPayload> {
     match od.write(addr, value) {
-        Ok(()) => Some(encode_download_response(addr)),
+        Ok(()) => {
+            *last_write = Some(addr);
+            Some(encode_download_response(addr))
+        }
         Err(Error::ReadOnly) => abort(addr, SdoAbortCode::WriteOfReadOnly),
         Err(Error::TypeMismatch) => abort(addr, SdoAbortCode::DataTypeMismatchLengthHigh),
         Err(_) => abort(addr, SdoAbortCode::General),
@@ -342,6 +360,31 @@ mod tests {
             od.read(Address::new(0x1017, 0)).unwrap(),
             Value::Unsigned16(1234)
         );
+    }
+
+    #[test]
+    fn take_write_reports_the_written_object_once() {
+        let mut od = od();
+        let mut s = server();
+        // Nothing written yet.
+        assert_eq!(s.take_write(), None);
+
+        let req = super::super::encode_download_expedited(
+            Address::new(0x1017, 0),
+            &Value::Unsigned16(1234),
+        )
+        .unwrap();
+        s.handle(&mut od, &req).unwrap();
+        // The write is reported once, then cleared.
+        assert_eq!(s.take_write(), Some(Address::new(0x1017, 0)));
+        assert_eq!(s.take_write(), None);
+
+        // A failed write (read-only object) is not reported.
+        let ro =
+            super::super::encode_download_expedited(Address::new(0x1000, 0), &Value::Unsigned32(1))
+                .unwrap();
+        s.handle(&mut od, &ro).unwrap();
+        assert_eq!(s.take_write(), None);
     }
 
     #[test]

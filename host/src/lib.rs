@@ -14,6 +14,11 @@ pub use canopen_rs;
 /// Cross-platform: EDS files are plain text and carry no OS dependency.
 pub mod eds;
 
+/// Generate a compile-time object dictionary from an EDS/DCF file (for `build.rs`).
+///
+/// Cross-platform.
+pub mod codegen;
+
 /// NMT master tooling: heartbeat monitoring and node health.
 ///
 /// Cross-platform; sending NMT commands rides on the Linux `transport` module.

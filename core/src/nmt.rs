@@ -169,6 +169,22 @@ pub fn decode_heartbeat(frame: &HeartbeatFrame) -> Result<NmtState> {
     NmtState::from_wire(frame[0])
 }
 
+/// Encode a **node-guarding** response byte: the alternating toggle bit in bit
+/// 7 and the current [`NmtState`] in bits 0–6.
+///
+/// Node guarding (CiA 301 §7.3.1) is the legacy error-control alternative to
+/// heartbeat: the master polls the node with an RTR frame on `0x700 + node` and
+/// the node replies with this byte, toggling bit 7 on each reply so lost or
+/// duplicated responses are detectable.
+pub fn encode_node_guard(state: NmtState, toggle: bool) -> u8 {
+    (if toggle { 0x80 } else { 0 }) | state as u8
+}
+
+/// Decode a node-guarding response byte into `(toggle, state)`.
+pub fn decode_node_guard(byte: u8) -> Result<(bool, NmtState)> {
+    Ok((byte & 0x80 != 0, NmtState::from_wire(byte)?))
+}
+
 /// The node-side NMT state machine (CiA 301 §7.3.2).
 ///
 /// Holds only the current state and applies the guarded transitions of the
@@ -314,6 +330,23 @@ mod tests {
     #[test]
     fn heartbeat_decode_rejects_unknown_state() {
         assert_eq!(decode_heartbeat(&[0x42]), Err(Error::UnknownState));
+    }
+
+    // --- Node guarding -----------------------------------------------------
+    #[test]
+    fn node_guard_encodes_toggle_and_state() {
+        // Operational (0x05) with toggle clear, then set.
+        assert_eq!(encode_node_guard(NmtState::Operational, false), 0x05);
+        assert_eq!(encode_node_guard(NmtState::Operational, true), 0x85);
+        assert_eq!(
+            decode_node_guard(0x85).unwrap(),
+            (true, NmtState::Operational)
+        );
+        assert_eq!(
+            decode_node_guard(0x7F).unwrap(),
+            (false, NmtState::PreOperational)
+        );
+        assert_eq!(decode_node_guard(0x42), Err(Error::UnknownState));
     }
 
     // --- State machine -----------------------------------------------------

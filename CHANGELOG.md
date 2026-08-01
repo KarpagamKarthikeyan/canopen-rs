@@ -9,12 +9,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **`canopen-cli`** — an installable command-line tool (binary `canopen`):
-  inspect EDS/DCF files anywhere, and read/write objects over SDO, send NMT
-  commands, and monitor bus traffic on a Linux SocketCAN interface.
+  inspect EDS/DCF files and generate a compile-time object dictionary anywhere,
+  and read/write objects over SDO, send NMT commands, and monitor bus traffic on
+  a Linux SocketCAN interface.
+- **EDS → object-dictionary codegen** (`canopen-host`, `codegen`):
+  `generate_object_dictionary` emits Rust source for a typed `ObjectDictionary`
+  from a parsed EDS/DCF — run from a `build.rs` (or `canopen codegen`) so a
+  device file becomes a compile-time, zero-runtime-parse OD.
 - **`Node::configure_pdos_from_od`** (`canopen-rs`): (re)build the node's PDO
   configuration from the PDO parameter objects in the object dictionary
   (`0x1400`/`0x1600`/`0x1800`/`0x1A00`) — the standard way a master configures
   PDOs over SDO. Honours the COB-ID validity bit.
+- **Object-dictionary write notification**: `Node::take_written_object` /
+  `SdoServer::take_write` report the object a master most recently wrote over
+  SDO, so a node can react to configuration writes (e.g. re-read PDOs, restart a
+  timer) — the sans-I/O equivalent of a write callback.
+- **TIME object** (`canopen-rs`, `time`): `TimeOfDay` producer/consumer codec
+  for the network time-of-day on COB-ID `0x100`.
+- **Node guarding** (CiA 301 §7.3.1): `nmt::encode_node_guard` /
+  `decode_node_guard` and `Node::node_guard_response` — the legacy RTR-based
+  error-control alternative to heartbeat, with the alternating toggle bit.
+
+With these, the classic CiA 301 communication objects are complete: object
+dictionary, SDO, PDO, NMT (heartbeat + node guarding), SYNC, EMCY, TIME, and LSS.
 
 ## [0.3.1] - 2026-07-31
 

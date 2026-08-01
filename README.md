@@ -30,9 +30,9 @@ top.
 | Data types + little-endian value codec | ✅ |
 | SDO — expedited **and** segmented transfer | ✅ |
 | SDO **server** (services the OD) and **client** (drives transactions) | ✅ |
-| NMT state machine, node-control, heartbeat / boot-up | ✅ |
+| NMT state machine, node-control, heartbeat + node guarding | ✅ |
 | PDO mapping, TPDO pack / RPDO unpack, connection-set COB-IDs | ✅ |
-| SYNC (producer counter) and EMCY (emergency + error register) | ✅ |
+| SYNC, EMCY (emergency + error register), and TIME | ✅ |
 | `Node` runtime (OD + SDO + NMT + PDO exchange) | ✅ |
 | LSS (node-id assignment, incl. in `Node`) | ✅ |
 | SDO block transfer (download + upload, CRC-16) | ✅ |
@@ -66,6 +66,7 @@ Rust 1.75.**
 cargo install canopen-cli    # installs the `canopen` binary
 
 canopen eds device.eds                       # inspect an EDS/DCF file (any OS)
+canopen codegen device.eds > src/od.rs       # EDS -> compile-time ObjectDictionary
 canopen read  can0 0x10 1017 u16             # SDO read  (Linux SocketCAN)
 canopen write can0 0x10 1017 u16 1000        # SDO write
 canopen nmt   can0 start 0x10                # send an NMT command

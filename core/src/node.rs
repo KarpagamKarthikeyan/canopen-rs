@@ -98,6 +98,7 @@ pub struct Node<const N: usize> {
     rpdos: Vec<RpdoSlot, MAX_PDOS>,
     tpdos: Vec<TpdoSlot, MAX_PDOS>,
     lss: Option<LssSlave>,
+    guard_toggle: bool,
 }
 
 impl<const N: usize> Node<N> {
@@ -112,6 +113,7 @@ impl<const N: usize> Node<N> {
             rpdos: Vec::new(),
             tpdos: Vec::new(),
             lss: None,
+            guard_toggle: false,
         }
     }
 
@@ -202,6 +204,26 @@ impl<const N: usize> Node<N> {
         }
     }
 
+    /// Take the address of the object a master most recently wrote over SDO,
+    /// clearing it. Poll after [`Node::on_frame`] to react to configuration
+    /// writes — for example, re-read the PDO layout when a PDO parameter object
+    /// (`0x1400`–`0x1BFF`) changes:
+    ///
+    /// ```
+    /// # use canopen_rs::{node::Node, NodeId, ObjectDictionary};
+    /// # let mut node = Node::new(NodeId::new(1).unwrap(), ObjectDictionary::<8>::new());
+    /// # let (cob_id, data) = (0u16, [0u8; 8]);
+    /// node.on_frame(cob_id, &data);
+    /// if let Some(addr) = node.take_written_object() {
+    ///     if (0x1400..=0x1BFF).contains(&addr.index) {
+    ///         node.configure_pdos_from_od();
+    ///     }
+    /// }
+    /// ```
+    pub fn take_written_object(&mut self) -> Option<crate::object_dictionary::Address> {
+        self.sdo.take_write()
+    }
+
     /// This node's id.
     pub fn node_id(&self) -> NodeId {
         self.node_id
@@ -226,7 +248,18 @@ impl<const N: usize> Node<N> {
     /// frame to transmit (`0x700 + node`, data `0x00`).
     pub fn boot(&mut self) -> TxFrame {
         self.nmt.boot();
+        self.guard_toggle = false;
         TxFrame::new(nmt::heartbeat_cob_id(self.node_id), &nmt::BOOTUP_FRAME)
+    }
+
+    /// The node-guarding response frame (`0x700 + node`), reporting the current
+    /// state with an alternating toggle bit. Call this when the master polls the
+    /// node with an RTR frame on that COB-ID (the legacy error-control
+    /// alternative to [`Node::heartbeat`]).
+    pub fn node_guard_response(&mut self) -> TxFrame {
+        let byte = nmt::encode_node_guard(self.nmt.state(), self.guard_toggle);
+        self.guard_toggle = !self.guard_toggle;
+        TxFrame::new(nmt::heartbeat_cob_id(self.node_id), &[byte])
     }
 
     /// The heartbeat frame for the current state. Transmit it on your heartbeat
@@ -475,6 +508,18 @@ mod tests {
         );
         assert_eq!(n.state(), NmtState::Operational);
         assert_eq!(n.heartbeat().data(), &[0x05]); // operational
+    }
+
+    #[test]
+    fn node_guard_response_toggles() {
+        let mut n = node();
+        n.boot();
+        start(&mut n); // operational (0x05)
+        let first = n.node_guard_response();
+        assert_eq!(first.cob_id, 0x710); // 0x700 + node
+        assert_eq!(first.data(), &[0x05]); // toggle clear
+        assert_eq!(n.node_guard_response().data(), &[0x85]); // toggle set
+        assert_eq!(n.node_guard_response().data(), &[0x05]); // toggles back
     }
 
     #[test]
@@ -801,5 +846,54 @@ mod tests {
         n.boot();
         start(&mut n);
         assert!(n.sync_tpdos().is_empty()); // the invalid TPDO was not configured
+    }
+
+    #[test]
+    fn reacts_to_a_pdo_parameter_write() {
+        // TPDO1 params present but initially disabled (COB-ID invalid bit set).
+        let mut od = ObjectDictionary::<16>::new();
+        od.insert(
+            Address::new(0x1800, 1),
+            Entry::rw(Value::Unsigned32(0x8000_0190)),
+        )
+        .unwrap();
+        od.insert(Address::new(0x1800, 2), Entry::rw(Value::Unsigned8(1)))
+            .unwrap();
+        od.insert(Address::new(0x1A00, 0), Entry::rw(Value::Unsigned8(1)))
+            .unwrap();
+        od.insert(
+            Address::new(0x1A00, 1),
+            Entry::rw(Value::Unsigned32(MappingEntry::new(0x6000, 1, 16).to_u32())),
+        )
+        .unwrap();
+        od.insert(
+            Address::new(0x6000, 1),
+            Entry::rw(Value::Unsigned16(0xBEEF)),
+        )
+        .unwrap();
+
+        let mut n = Node::new(NodeId::new(0x10).unwrap(), od);
+        n.configure_pdos_from_od();
+        n.boot();
+        start(&mut n);
+        assert!(n.sync_tpdos().is_empty());
+
+        // A master enables the TPDO by writing a valid COB-ID to 0x1800/1.
+        let req =
+            encode_download_expedited(Address::new(0x1800, 1), &Value::Unsigned32(0x190)).unwrap();
+        n.on_frame(0x610, &req);
+
+        // The node notices the PDO-parameter write and reconfigures.
+        let written = n.take_written_object().expect("a write was recorded");
+        assert_eq!(written, Address::new(0x1800, 1));
+        assert_eq!(n.take_written_object(), None); // reported once
+        if (0x1400..=0x1BFF).contains(&written.index) {
+            n.configure_pdos_from_od();
+        }
+
+        // The TPDO is now active.
+        let tpdos = n.sync_tpdos();
+        assert_eq!(tpdos.len(), 1);
+        assert_eq!(tpdos[0].cob_id, 0x190);
     }
 }

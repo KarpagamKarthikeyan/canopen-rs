@@ -32,6 +32,14 @@ enum Command {
         /// Path to the `.eds` / `.dcf` file.
         file: PathBuf,
     },
+    /// Generate a compile-time object dictionary (Rust source) from an EDS/DCF.
+    Codegen {
+        /// Path to the `.eds` / `.dcf` file.
+        file: PathBuf,
+        /// Name of the generated function.
+        #[arg(long, default_value = "object_dictionary")]
+        function: String,
+    },
     /// Read an object from a node over SDO (Linux SocketCAN).
     Read {
         /// CAN interface, e.g. `can0` or `vcan0`.
@@ -76,6 +84,7 @@ enum Command {
 fn main() -> Result<()> {
     match Cli::parse().command {
         Command::Eds { file } => cmd_eds(&file),
+        Command::Codegen { file, function } => cmd_codegen(&file, &function),
         Command::Read {
             interface,
             node,
@@ -127,6 +136,14 @@ fn cmd_eds(file: &PathBuf) -> Result<()> {
             obj.parameter_name,
         );
     }
+    Ok(())
+}
+
+fn cmd_codegen(file: &PathBuf, function: &str) -> Result<()> {
+    use canopen_host::{codegen::generate_object_dictionary, eds::Eds};
+
+    let eds = Eds::from_file(file).with_context(|| format!("reading {}", file.display()))?;
+    print!("{}", generate_object_dictionary(&eds, function));
     Ok(())
 }
 
