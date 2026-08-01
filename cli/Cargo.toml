@@ -1,0 +1,22 @@
+[package]
+name = "canopen-cli"
+description = "Command-line tool for CANopen: SDO read/write, NMT control, bus monitoring, and EDS inspection over Linux SocketCAN."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../README.md"
+
+[[bin]]
+name = "canopen"
+path = "src/main.rs"
+
+[dependencies]
+canopen-rs = { workspace = true, features = ["std"] }
+canopen-host.workspace = true
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"

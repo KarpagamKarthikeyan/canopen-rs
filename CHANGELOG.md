@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-07-31
+
+### Added
+
+- **`canopen-cli`** — an installable command-line tool (binary `canopen`):
+  inspect EDS/DCF files anywhere, and read/write objects over SDO, send NMT
+  commands, and monitor bus traffic on a Linux SocketCAN interface.
+- **`Node::configure_pdos_from_od`** (`canopen-rs`): (re)build the node's PDO
+  configuration from the PDO parameter objects in the object dictionary
+  (`0x1400`/`0x1600`/`0x1800`/`0x1A00`) — the standard way a master configures
+  PDOs over SDO. Honours the COB-ID validity bit.
+
 ## [0.3.1] - 2026-07-31
 
 Documentation only — no code changes. Published so crates.io reflects the
@@ -89,6 +101,7 @@ both host (Linux/SocketCAN) and bare-metal MCU.
 - Wire format cross-checked byte-for-byte against `python-canopen`; CI with a
   virtual-CAN on-bus loopback.
 
+[0.4.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.4.0
 [0.3.1]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.3.1
 [0.3.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.3.0
 [0.2.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.2.0

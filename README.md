@@ -60,6 +60,18 @@ implementation — no host crate needed. In `canopen-host`, the SocketCAN
 transport is compiled only on Linux; EDS parsing builds everywhere. **MSRV:
 Rust 1.75.**
 
+## Command-line tool
+
+```bash
+cargo install canopen-cli    # installs the `canopen` binary
+
+canopen eds device.eds                       # inspect an EDS/DCF file (any OS)
+canopen read  can0 0x10 1017 u16             # SDO read  (Linux SocketCAN)
+canopen write can0 0x10 1017 u16 1000        # SDO write
+canopen nmt   can0 start 0x10                # send an NMT command
+canopen monitor can0                         # decode and print bus traffic
+```
+
 ## Quickstart
 
 ### Serve an object dictionary (a device node)
