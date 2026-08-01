@@ -126,9 +126,9 @@ impl SdoClient {
     /// transmit; expedited or segmented is chosen from the value's size.
     pub fn write(&mut self, addr: Address, value: Value) -> SdoPayload {
         let size = value.size();
-        if size <= 4 {
+        if (1..=4).contains(&size) {
             self.state = State::DownloadExpedited;
-            encode_download_expedited(addr, &value).expect("size <= 4")
+            encode_download_expedited(addr, &value).expect("size 1..=4")
         } else {
             let mut data = [0u8; MAX_STRING_LEN];
             value

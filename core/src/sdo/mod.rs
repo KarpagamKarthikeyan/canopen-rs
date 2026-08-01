@@ -128,7 +128,9 @@ pub enum SdoAbortCode {
 /// which require segmented transfer.
 pub fn encode_download_expedited(addr: Address, value: &Value) -> Result<SdoPayload> {
     let len = value.size();
-    if len > 4 {
+    // Expedited carries 1..=4 data bytes; empty and larger values go segmented
+    // (the 2-bit unused-byte field cannot express a zero-length payload).
+    if len == 0 || len > 4 {
         return Err(Error::UnsupportedTransfer);
     }
     let mut p = [0u8; 8];
@@ -172,7 +174,8 @@ pub fn encode_upload_request(addr: Address) -> SdoPayload {
 /// Returns [`Error::UnsupportedTransfer`] for values larger than four bytes.
 pub fn encode_upload_expedited_response(addr: Address, value: &Value) -> Result<SdoPayload> {
     let len = value.size();
-    if len > 4 {
+    // Expedited carries 1..=4 data bytes; empty and larger values go segmented.
+    if len == 0 || len > 4 {
         return Err(Error::UnsupportedTransfer);
     }
     let mut p = [0u8; 8];
@@ -315,10 +318,11 @@ pub fn decode_upload_initiate_segmented_response(p: &SdoPayload) -> Result<(Addr
 ///
 /// Used for both the download-segment request and the upload-segment response
 /// (identical layout). `toggle` alternates each segment (the first is
-/// `false`); `last` marks the final segment. Returns [`Error::BadLength`]
-/// unless `data` is 1..=7 bytes.
+/// `false`); `last` marks the final segment. Returns [`Error::BadLength`] if
+/// `data` is longer than 7 bytes. An empty final segment (0 bytes) is allowed,
+/// so a zero-length value can be transferred.
 pub fn encode_data_segment(data: &[u8], toggle: bool, last: bool) -> Result<SdoPayload> {
-    if data.is_empty() || data.len() > SEGMENT_DATA_MAX {
+    if data.len() > SEGMENT_DATA_MAX {
         return Err(Error::BadLength);
     }
     let mut p = [0u8; 8];

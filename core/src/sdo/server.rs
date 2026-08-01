@@ -132,6 +132,12 @@ impl SdoServer {
             } else {
                 data_type.fixed_size().unwrap_or(0)
             };
+            // Expedited carries at most four data bytes; a larger fixed type
+            // must use segmented transfer. Guard the slice against a malformed
+            // frame (e.g. size-indication clear on an 8-byte object).
+            if len > 4 {
+                return abort(addr, SdoAbortCode::DataTypeMismatchLengthHigh);
+            }
             // A fixed-size type must match exactly; a variable-length one takes
             // the indicated length as its (short) content.
             if let Some(fixed) = data_type.fixed_size() {
@@ -183,8 +189,8 @@ impl SdoServer {
             Err(_) => return abort(addr, SdoAbortCode::General),
         };
         let size = value.size();
-        if size <= 4 {
-            Some(encode_upload_expedited_response(addr, &value).expect("size <= 4"))
+        if (1..=4).contains(&size) {
+            Some(encode_upload_expedited_response(addr, &value).expect("size 1..=4"))
         } else {
             let mut data = [0u8; MAX_STRING_LEN];
             value
