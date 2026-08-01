@@ -9,10 +9,10 @@ A **`no_std`-first [CANopen] (CiA 301) protocol stack in Rust**, built to run
 unchanged on a bare-metal microcontroller node *and* on a host
 (Linux/SocketCAN).
 
-> **Status: early development (0.3).** The API will change before 1.0, but the
+> **Status: early development (0.5).** The API will change before 1.0, but the
 > object dictionary, SDO client/server (expedited, segmented, block), PDO, NMT,
-> SYNC, EMCY, LSS, and EDS parsing are implemented and tested — the whole stack
-> is verified running on a bus.
+> SYNC, EMCY, TIME, LSS, and EDS parsing are implemented and tested — the whole
+> stack is verified running on a bus, with blocking and `async` host transports.
 
 ## Why
 
@@ -36,10 +36,10 @@ top.
 | `Node` runtime (OD + SDO + NMT + PDO exchange) | ✅ |
 | LSS (node-id assignment, incl. in `Node`) | ✅ |
 | SDO block transfer (download + upload, CRC-16) | ✅ |
-| `embedded-can` bridge + Linux SocketCAN transport | ✅ |
+| `embedded-can` bridge + Linux SocketCAN transport (blocking + `async`/tokio) | ✅ |
 | EDS / DCF file parsing → object dictionary | ✅ |
 | Host NMT master: `send_nmt` + heartbeat monitor | ✅ |
-| String / `DOMAIN` value types; block transfer in the SDO client/server | planned |
+| String / `DOMAIN` value types | planned |
 
 Everything in the core is `#![no_std]`, `#![deny(unsafe_code)]`, and builds for
 `thumbv7em-none-eabihf`; SDO frame codecs are validated against known-good byte
@@ -49,12 +49,12 @@ sequences, and the client/server are exercised end-to-end.
 
 ```toml
 [dependencies]
-canopen-rs = "0.1"      # no_std core: OD, SDO, PDO, NMT, SYNC, EMCY
-canopen-host = "0.1"    # std host layer: SocketCAN transport + EDS parsing
+canopen-rs = "0.5"      # no_std core: OD, SDO, PDO, NMT, SYNC, EMCY
+canopen-host = "0.5"    # std host layer: SocketCAN transport + EDS parsing
 ```
 
 The core is `no_std` by default; enable `std` for `std::error::Error` impls
-(`canopen-rs = { version = "0.1", features = ["std"] }`). On a microcontroller,
+(`canopen-rs = { version = "0.5", features = ["std"] }`). On a microcontroller,
 depend only on `canopen-rs` and drive it with your HAL's [`embedded-can`]
 implementation — no host crate needed. In `canopen-host`, the SocketCAN
 transport is compiled only on Linux; EDS parsing builds everywhere. **MSRV:

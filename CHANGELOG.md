@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-01
+
 ### Added
 
 - **Async SocketCAN transport** (`canopen-host`, `async_transport`, behind the
@@ -136,6 +138,7 @@ both host (Linux/SocketCAN) and bare-metal MCU.
 - Wire format cross-checked byte-for-byte against `python-canopen`; CI with a
   virtual-CAN on-bus loopback.
 
+[0.5.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.5.0
 [0.4.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.4.0
 [0.3.1]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.3.1
 [0.3.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.3.0

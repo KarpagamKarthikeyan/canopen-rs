@@ -3,7 +3,7 @@ resolver = "2"
 members = ["core", "host", "cli"]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 authors = ["Karpagam Karthikeyan"]
@@ -14,10 +14,10 @@ categories = ["embedded", "no-std", "network-programming"]
 
 [workspace.dependencies]
 # The no_std core, depended on by host crates.
-canopen-rs = { path = "core", version = "0.4.0" }
+canopen-rs = { path = "core", version = "0.5.0" }
 
 # The std host layer, depended on by the CLI.
-canopen-host = { path = "host", version = "0.4.0" }
+canopen-host = { path = "host", version = "0.5.0" }
 
 # Transport-agnostic CAN frame/id abstraction (no_std).
 embedded-can = "0.4"
