@@ -48,8 +48,8 @@ mod linux {
     };
     use canopen_rs::sync::SYNC_COB_ID;
     use canopen_rs::{
-        Address, DataType, Entry, MappingEntry, NmtCommand, NodeId, ObjectDictionary, PdoMapping,
-        TransmissionType, Value,
+        Address, ByteString, DataType, Entry, MappingEntry, NmtCommand, NodeId, ObjectDictionary,
+        PdoMapping, TransmissionType, Value,
     };
 
     const IFACE: &str = "vcan0";
@@ -101,7 +101,14 @@ mod linux {
             bus.sdo_read(node, Address::new(0x2000, 0), DataType::Unsigned64)?,
             big
         );
-        println!("SDO: expedited + segmented read/write OK");
+        // A VISIBLE_STRING longer than eight bytes -> segmented string transfer.
+        let name = Value::VisibleString(ByteString::from_str("canopen-rs device")?);
+        bus.sdo_write(node, Address::new(0x1008, 0), name)?;
+        assert_eq!(
+            bus.sdo_read(node, Address::new(0x1008, 0), DataType::VisibleString)?,
+            name
+        );
+        println!("SDO: expedited + segmented (numeric + string) read/write OK");
 
         // --- 3+4. NMT start, then RPDO in -> SYNC -> TPDO out. ---
         bus.send_nmt(NmtCommand::StartRemoteNode, node)?;
@@ -159,6 +166,11 @@ mod linux {
         od.insert(Address::new(0x1017, 0), Entry::rw(Value::Unsigned16(1000)))?;
         od.insert(Address::new(0x2000, 0), Entry::rw(Value::Unsigned64(0)))?;
         od.insert(Address::new(0x6000, 1), Entry::rw(Value::Unsigned16(0)))?;
+        // 0x1008 device name — a VISIBLE_STRING, exercised over the bus below.
+        od.insert(
+            Address::new(0x1008, 0),
+            Entry::rw(Value::VisibleString(ByteString::new())),
+        )?;
 
         // Provisional id 1 while unconfigured; LSS assigns the real one.
         let mut node = Node::new(NodeId::new(1)?, od);
