@@ -88,9 +88,26 @@ fn value_literal(value: &Value) -> String {
         Value::Integer64(x) => format!("canopen_rs::Value::Integer64({x})"),
         Value::Real32(x) => format!("canopen_rs::Value::Real32({x:?}f32)"),
         Value::Real64(x) => format!("canopen_rs::Value::Real64({x:?}f64)"),
+        Value::VisibleString(s) => string_literal("VisibleString", s.as_bytes()),
+        Value::OctetString(s) => string_literal("OctetString", s.as_bytes()),
+        Value::Domain(s) => string_literal("Domain", s.as_bytes()),
         // `Value` is #[non_exhaustive]; every current variant is handled above.
         _ => panic!("codegen: unsupported value variant {value:?}"),
     }
+}
+
+/// A Rust literal for a variable-length value: reconstruct the bounded
+/// [`ByteString`](canopen_rs::ByteString) from its bytes. The EDS parser already
+/// caps content at `MAX_STRING_LEN`, so `from_bytes` cannot fail at runtime.
+fn string_literal(variant: &str, bytes: &[u8]) -> String {
+    let mut list = String::new();
+    for (i, b) in bytes.iter().enumerate() {
+        if i > 0 {
+            list.push_str(", ");
+        }
+        let _ = write!(list, "{b:#04x}");
+    }
+    format!("canopen_rs::Value::{variant}(canopen_rs::ByteString::from_bytes(&[{list}]).unwrap())")
 }
 
 #[cfg(test)]
@@ -105,6 +122,12 @@ DataType=0x0007
 AccessType=ro
 DefaultValue=0x00040192
 
+[1008]
+ParameterName=Device name
+DataType=0x0009
+AccessType=const
+DefaultValue=Widget
+
 [1017]
 ParameterName=Producer heartbeat time
 DataType=0x0006
@@ -116,13 +139,24 @@ DefaultValue=1000
     // so the compiler proves the generated pattern is valid Rust that builds a
     // correct object dictionary. If the generator's format changes, update both.
     #[allow(clippy::needless_return)]
-    fn generated_sample() -> ObjectDictionary<2> {
+    fn generated_sample() -> ObjectDictionary<3> {
         let mut od = ObjectDictionary::new();
         od.insert(
             Address::new(0x1000, 0x00),
             canopen_rs::Entry {
                 value: canopen_rs::Value::Unsigned32(0x00040192),
                 access: AccessType::Ro,
+            },
+        )
+        .unwrap();
+        od.insert(
+            Address::new(0x1008, 0x00),
+            canopen_rs::Entry {
+                value: canopen_rs::Value::VisibleString(
+                    canopen_rs::ByteString::from_bytes(&[0x57, 0x69, 0x64, 0x67, 0x65, 0x74])
+                        .unwrap(),
+                ),
+                access: AccessType::Const,
             },
         )
         .unwrap();
@@ -148,6 +182,10 @@ DefaultValue=1000
             od.read(Address::new(0x1017, 0)).unwrap(),
             Value::Unsigned16(1000)
         );
+        match od.read(Address::new(0x1008, 0)).unwrap() {
+            Value::VisibleString(bs) => assert_eq!(bs.as_str(), Some("Widget")),
+            other => panic!("expected VISIBLE_STRING, got {other:?}"),
+        }
     }
 
     #[test]
@@ -155,12 +193,16 @@ DefaultValue=1000
         let eds = Eds::parse(SAMPLE).unwrap();
         let src = generate_object_dictionary(&eds, "device_od");
 
-        assert!(src.contains("pub fn device_od() -> canopen_rs::ObjectDictionary<2> {"));
+        assert!(src.contains("pub fn device_od() -> canopen_rs::ObjectDictionary<3> {"));
         assert!(src.contains(
             "od.insert(canopen_rs::Address::new(0x1000, 0x00), canopen_rs::Entry { value: canopen_rs::Value::Unsigned32(0x00040192), access: canopen_rs::AccessType::Ro }).unwrap();"
         ));
         assert!(src.contains(
             "od.insert(canopen_rs::Address::new(0x1017, 0x00), canopen_rs::Entry { value: canopen_rs::Value::Unsigned16(0x03e8), access: canopen_rs::AccessType::Rw }).unwrap();"
+        ));
+        // The VISIBLE_STRING object (the variant that used to panic codegen).
+        assert!(src.contains(
+            "canopen_rs::Value::VisibleString(canopen_rs::ByteString::from_bytes(&[0x57, 0x69, 0x64, 0x67, 0x65, 0x74]).unwrap())"
         ));
     }
 }

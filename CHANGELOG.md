@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-01
+
+### Fixed
+
+- **SDO server panic on a malformed expedited frame** (`canopen-rs`, `sdo`): an
+  expedited download-initiate with the size-indication bit clear, targeting a
+  fixed object larger than four bytes, sliced out of bounds and panicked; it now
+  aborts cleanly. A remotely triggerable denial of service.
+- **Empty variable-length values corrupted to four NUL bytes** (`canopen-rs`,
+  `sdo`): expedited transfer cannot encode a zero-length payload, so empty
+  `VISIBLE_STRING` / `OCTET_STRING` / `DOMAIN` values now route through
+  segmented transfer and round-trip correctly.
+- **`canopen codegen` panicked on any EDS with a string/`DOMAIN` object**
+  (`canopen-host`, `codegen`): the value-literal emitter did not handle the
+  variable-length variants (e.g. object `0x1008` device name, present in almost
+  every EDS); it now emits a `ByteString::from_bytes(..)` literal.
+- **README**: corrected the status line and install pins from `0.5` to `0.6`
+  (a copy-pasted `"0.5"` resolved to an incompatible older release).
+
 ## [0.6.0] - 2026-08-01
 
 ### Added
@@ -180,6 +199,7 @@ both host (Linux/SocketCAN) and bare-metal MCU.
 - Wire format cross-checked byte-for-byte against `python-canopen`; CI with a
   virtual-CAN on-bus loopback.
 
+[0.6.1]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.6.1
 [0.6.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.6.0
 [0.5.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.5.0
 [0.4.0]: https://github.com/KarpagamKarthikeyan/canopen-rs/releases/tag/v0.4.0
