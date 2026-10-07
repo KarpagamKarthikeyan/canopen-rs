@@ -1,0 +1,63 @@
+[package]
+name = "canopen-rs-fuzz"
+version = "0.6.1"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.canopen-rs]
+workspace = true
+
+[[bin]]
+name = "sdo_server_handle"
+path = "fuzz_targets/sdo_server_handle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sdo_decode_data_segment"
+path = "fuzz_targets/sdo_decode_data_segment.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sdo_decode_download_initiate_segmented"
+path = "fuzz_targets/sdo_decode_download_initiate_segmented.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pdo_unpack"
+path = "fuzz_targets/pdo_unpack.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "values_decode_le"
+path = "fuzz_targets/values_decode_le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lss_slave_handle"
+path = "fuzz_targets/lss_slave_handle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lss_decode"
+path = "fuzz_targets/lss_decode.rs"
+test = false
+doc = false
+bench = false

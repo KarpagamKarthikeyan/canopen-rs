@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["core", "host", "cli"]
+members = ["core", "host", "cli", "fuzz"]
 
 [workspace.package]
 version = "0.6.1"
