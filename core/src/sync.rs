@@ -10,6 +10,22 @@
 //!
 //! The default COB-ID is `0x080` ([`SYNC_COB_ID`]), configurable via object
 //! `0x1005`.
+//!
+//! # Example
+//!
+//! A producer configured with an overflow of three emits counter values from
+//! one through three, then wraps back to one:
+//!
+//! ```
+//! use canopen_rs::sync::{decode, encode_counter, SyncCounter};
+//!
+//! let mut counter = SyncCounter::new(3).unwrap();
+//! let frame_data = encode_counter(counter.advance().unwrap());
+//! assert_eq!(decode(&frame_data), Ok(Some(1)));
+//! assert_eq!(counter.advance(), Some(2));
+//! assert_eq!(counter.advance(), Some(3));
+//! assert_eq!(counter.advance(), Some(1));
+//! ```
 
 use crate::{Error, Result};
 

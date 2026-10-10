@@ -1,4 +1,18 @@
 //! Foundational CANopen types shared across the stack.
+//!
+//! # Example
+//!
+//! Device node IDs are checked to stay in the valid CANopen range. The
+//! broadcast ID is represented separately:
+//!
+//! ```
+//! use canopen_rs::types::{Error, NodeId};
+//!
+//! let device = NodeId::new(42).unwrap();
+//! assert_eq!(device.raw(), 42);
+//! assert_eq!(NodeId::new(0), Err(Error::InvalidNodeId));
+//! assert_eq!(NodeId::BROADCAST.raw(), 0);
+//! ```
 
 use core::fmt;
 
